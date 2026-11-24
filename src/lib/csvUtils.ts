@@ -37,7 +37,7 @@ function escapeCsv(val: unknown): string {
 export function exportInvoicesToCSV(invoices: MockInvoice[], companyName = 'Goodwin Batteries') {
   const headers = [
     'Invoice Number',
-    'Voucher Type',
+    'Employee Name',
     'Date',
     'Order Number',
     'Order Date',
@@ -74,7 +74,7 @@ export function exportInvoicesToCSV(invoices: MockInvoice[], companyName = 'Good
 
     return [
       escapeCsv(inv.invoiceNumber),
-      escapeCsv(inv.invoiceType),
+      escapeCsv(inv.employeeName || inv.referenceName || 'Admin'),
       escapeCsv(inv.invoiceDate),
       escapeCsv(inv.orderNumber || ''),
       escapeCsv(inv.orderDate || ''),

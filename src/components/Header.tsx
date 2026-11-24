@@ -21,7 +21,9 @@ import {
   Upload,
   UserPlus,
   Check,
+  BookOpen,
 } from 'lucide-react';
+import Link from 'next/link';
 import { useApp } from '@/context/AppContext';
 import { useRouter, usePathname } from 'next/navigation';
 import LoginModal from '@/components/LoginModal';
@@ -212,11 +214,6 @@ export default function Header({ onOpenQuickBill, onOpenAddItem }: HeaderProps) 
                                   GST Reports
                                 </span>
                               )}
-                              {company.hasOnlineStore && (
-                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-medium">
-                                  Store
-                                </span>
-                              )}
                               {!company.hasPos && !company.hasGstReports && (
                                 <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 font-medium border border-amber-200">
                                   Without GST • Fast Invoices & Stock
@@ -269,23 +266,13 @@ export default function Header({ onOpenQuickBill, onOpenAddItem }: HeaderProps) 
           </button>
 
           {/* Bill Button */}
-          {selectedCompany.hasPos ? (
-            <button
-              onClick={onOpenQuickBill}
-              className="h-9 px-3.5 rounded-xl bg-[#4c3cce] hover:bg-[#3d2eb5] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
-            >
-              <QrCode size={15} />
-              <span>Quick POS Bill</span>
-            </button>
-          ) : (
-            <button
-              onClick={onOpenQuickBill}
-              className="h-9 px-3.5 rounded-xl bg-[#4c3cce] hover:bg-[#3d2eb5] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
-            >
-              <FilePlus2 size={15} />
-              <span>New Invoice</span>
-            </button>
-          )}
+          <button
+            onClick={onOpenQuickBill}
+            className="h-9 px-3.5 rounded-xl bg-[#4c3cce] hover:bg-[#3d2eb5] text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all"
+          >
+            <FilePlus2 size={15} />
+            <span>New Invoice</span>
+          </button>
 
           {/* Admin Test Environment Quick Toggle Button */}
           {currentUser.role === 'ADMIN' && (
@@ -432,6 +419,18 @@ export default function Header({ onOpenQuickBill, onOpenAddItem }: HeaderProps) 
                       <p className="text-[10px] text-slate-400">Download/Upload CSV data</p>
                     </div>
                   </button>
+
+                  <Link
+                    href="/sop"
+                    onClick={() => setIsUserMenuOpen(false)}
+                    className="w-full text-left p-2.5 rounded-xl hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-2.5 transition-colors"
+                  >
+                    <BookOpen size={15} className="text-[#4c3cce]" />
+                    <div>
+                      <p className="font-bold text-slate-800">Employee SOP &amp; User Manual</p>
+                      <p className="text-[10px] text-slate-400">View ERP rules &amp; download PDF</p>
+                    </div>
+                  </Link>
                 </div>
 
                 {/* Footer Logout */}

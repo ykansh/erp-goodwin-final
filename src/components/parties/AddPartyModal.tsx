@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Building, Phone, Mail, FileText, Check } from 'lucide-react';
+import { X, UserPlus } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { MockParty } from '@/lib/mockData';
 import { GST_STATES } from '@/lib/constants';
@@ -13,18 +13,17 @@ interface AddPartyModalProps {
 }
 
 export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyModalProps) {
-  const { addParty, updateParty } = useApp();
+  const { addParty, updateParty, selectedCompany } = useApp();
+  const isGB2 = selectedCompany?.code === 'goodwin-2';
 
   const [type, setType] = useState<'CUSTOMER' | 'SUPPLIER'>('CUSTOMER');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [gstin, setGstin] = useState('');
-  const [stateCode, setStateCode] = useState('27');
+  const [stateCode, setStateCode] = useState('23');
   const [address, setAddress] = useState('');
-  const [creditLimit, setCreditLimit] = useState<number>(100000);
-  const [openingBalance, setOpeningBalance] = useState<number>(0);
-  const [balanceType, setBalanceType] = useState<'RECEIVE' | 'PAY'>('RECEIVE');
+  const [createdAt, setCreatedAt] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     if (editParty) {
@@ -33,38 +32,22 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
       setPhone(editParty.phone);
       setEmail(editParty.email || '');
       setGstin(editParty.gstin || '');
-      setStateCode(editParty.stateCode || '27');
+      setStateCode(editParty.stateCode || '23');
       setAddress(editParty.address || '');
-      setCreditLimit(editParty.creditLimit || 0);
-      setOpeningBalance(Math.abs(editParty.currentBalance));
-      setBalanceType(editParty.currentBalance >= 0 ? 'RECEIVE' : 'PAY');
+      setCreatedAt(editParty.createdAt || new Date().toISOString().split('T')[0]);
     } else {
       setType('CUSTOMER');
       setName('');
       setPhone('');
       setEmail('');
       setGstin('');
-      setStateCode('27');
+      setStateCode('23');
       setAddress('');
-      setCreditLimit(100000);
-      setOpeningBalance(0);
-      setBalanceType('RECEIVE');
+      setCreatedAt(new Date().toISOString().split('T')[0]);
     }
   }, [editParty, isOpen]);
 
   if (!isOpen) return null;
-
-  const handleGstinChange = (val: string) => {
-    const uppercaseVal = val.toUpperCase();
-    setGstin(uppercaseVal);
-    if (uppercaseVal.length >= 2) {
-      const code = uppercaseVal.slice(0, 2);
-      const stateObj = GST_STATES.find((s) => s.code === code);
-      if (stateObj) {
-        setStateCode(code);
-      }
-    }
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,8 +57,6 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
     }
 
     const stateObj = GST_STATES.find((s) => s.code === stateCode);
-    const finalBalance =
-      balanceType === 'RECEIVE' ? Number(openingBalance) : -Math.abs(Number(openingBalance));
 
     if (editParty) {
       updateParty(editParty.id, {
@@ -84,11 +65,10 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
         phone,
         email,
         gstin,
-        state: stateObj?.name || 'Maharashtra',
+        state: stateObj?.name || 'Madhya Pradesh',
         stateCode,
         address,
-        creditLimit: Number(creditLimit),
-        currentBalance: finalBalance,
+        createdAt,
       });
     } else {
       addParty({
@@ -97,11 +77,12 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
         phone,
         email,
         gstin,
-        state: stateObj?.name || 'Maharashtra',
+        state: stateObj?.name || 'Madhya Pradesh',
         stateCode,
         address,
-        creditLimit: Number(creditLimit),
-        currentBalance: finalBalance,
+        creditLimit: 0,
+        currentBalance: 0,
+        createdAt,
       });
     }
 
@@ -110,7 +91,7 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="h-16 px-6 border-b border-slate-200 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-3">
@@ -119,10 +100,10 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
             </div>
             <div>
               <h2 className="font-bold text-slate-800 text-base">
-                {editParty ? 'Edit Party Details' : 'Add Customer / Vendor (Khata)'}
+                {editParty ? 'Edit Party Details' : 'Add Customer / Vendor'}
               </h2>
               <p className="text-[11px] text-slate-500">
-                Setup ledger accounts, GSTIN verification &amp; WhatsApp reminders
+                Simple customer &amp; vendor details for Payment In / Payment Out tracking
               </p>
             </div>
           </div>
@@ -147,21 +128,18 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              Customer (Buyer / Debtor)
+              Customer (Buyer)
             </button>
             <button
               type="button"
-              onClick={() => {
-                setType('SUPPLIER');
-                setBalanceType('PAY');
-              }}
+              onClick={() => setType('SUPPLIER')}
               className={`flex-1 py-2 rounded-lg font-bold transition-all ${
                 type === 'SUPPLIER'
                   ? 'bg-white text-[#db631a] shadow-2xs'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              Supplier (Vendor / Creditor)
+              Supplier (Vendor)
             </button>
           </div>
 
@@ -183,7 +161,7 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
 
             <div>
               <label className="block font-semibold text-slate-700 mb-1">
-                Mobile Number (WhatsApp Enabled) *
+                Mobile Number (WhatsApp) *
               </label>
               <input
                 type="text"
@@ -196,16 +174,16 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
             </div>
           </div>
 
-          {/* GSTIN & State */}
+          {/* Date & State */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">GSTIN (Optional)</label>
+              <label className="block font-semibold text-slate-700 mb-1">Date *</label>
               <input
-                type="text"
-                value={gstin}
-                onChange={(e) => handleGstinChange(e.target.value)}
-                placeholder="e.g. 23ABCDE1234F1Z5"
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-[#4c3cce]"
+                type="date"
+                required
+                value={createdAt}
+                onChange={(e) => setCreatedAt(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
               />
             </div>
 
@@ -225,7 +203,7 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
             </div>
           </div>
 
-          {/* Address & Email */}
+          {/* Address & Email / GSTIN */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Billing Address</label>
@@ -238,81 +216,45 @@ export default function AddPartyModal({ isOpen, onClose, editParty }: AddPartyMo
               />
             </div>
 
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Email Address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="billing@party.com"
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#4c3cce]"
-              />
-            </div>
-          </div>
-
-          {/* Opening Balance & Credit Limit */}
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-            <h4 className="font-bold text-slate-800 text-xs uppercase text-[#4c3cce]">
-              Khata Ledger &amp; Credit Limits
-            </h4>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Opening Balance */}
+            {!isGB2 ? (
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Opening Balance (₹)</label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    value={openingBalance}
-                    onChange={(e) => setOpeningBalance(Number(e.target.value))}
-                    className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
-                  />
-                  <select
-                    value={balanceType}
-                    onChange={(e) => setBalanceType(e.target.value as any)}
-                    className="w-32 bg-white border border-slate-200 rounded-lg px-2 text-xs font-semibold text-slate-800"
-                  >
-                    <option value="RECEIVE">To Receive (Dr)</option>
-                    <option value="PAY">To Pay (Cr)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Credit Limit */}
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Credit Limit Threshold (₹)
-                </label>
+                <label className="block font-semibold text-slate-700 mb-1">GSTIN (Optional)</label>
                 <input
-                  type="number"
-                  min="0"
-                  value={creditLimit}
-                  onChange={(e) => setCreditLimit(Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
+                  type="text"
+                  value={gstin}
+                  onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                  placeholder="e.g. 23AAAAA0000A1Z5"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
                 />
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Warns cashier if customer dues exceed this amount
-                </p>
               </div>
-            </div>
+            ) : (
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="billing@party.com"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#4c3cce]"
+                />
+              </div>
+            )}
           </div>
 
-          {/* Actions */}
-          <div className="pt-2 flex justify-end gap-2 border-t border-slate-200">
+          {/* Footer Buttons */}
+          <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-200">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs"
+              className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 rounded-xl bg-[#4c3cce] hover:bg-[#3d2eb5] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs"
+              className="px-5 py-2 rounded-xl bg-[#4c3cce] hover:bg-[#3d2eb5] text-white font-bold text-xs shadow-xs transition-all active:scale-[0.98]"
             >
-              <Check size={16} />
-              <span>{editParty ? 'Update Party' : 'Save to Khata'}</span>
+              {editParty ? 'Save Changes' : 'Add Party'}
             </button>
           </div>
         </form>

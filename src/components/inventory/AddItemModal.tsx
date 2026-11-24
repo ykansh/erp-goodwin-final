@@ -22,7 +22,8 @@ const COMMON_HSN_CODES = [
 ];
 
 export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModalProps) {
-  const { addItem, updateItem, items } = useApp();
+  const { addItem, updateItem, items, selectedCompany } = useApp();
+  const isGB2 = selectedCompany?.code === 'goodwin-2';
 
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Inverter Batteries');
@@ -64,8 +65,9 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
       setMrp(0);
       setStock(10);
       setMinStockAlert(5);
+      setTaxRate(isGB2 ? 0 : 28);
     }
-  }, [editItem, isOpen]);
+  }, [editItem, isOpen, isGB2]);
 
   if (!isOpen) return null;
 
@@ -246,10 +248,10 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
           {/* Pricing & GST Slab */}
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
             <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider text-[#db631a]">
-              Pricing &amp; Tax Structure
+              {isGB2 ? 'Pricing Structure' : 'Pricing & Tax Structure'}
             </h3>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className={`grid grid-cols-1 ${isGB2 ? 'md:grid-cols-3' : 'md:grid-cols-4'} gap-3`}>
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Purchase Price (₹)</label>
                 <input
@@ -287,20 +289,22 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                 />
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">GST Tax Rate</label>
-                <select
-                  value={taxRate}
-                  onChange={(e) => setTaxRate(Number(e.target.value))}
-                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
-                >
-                  {GST_RATES.map((rate) => (
-                    <option key={rate} value={rate}>
-                      {rate}% GST
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!isGB2 && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">GST Tax Rate</label>
+                  <select
+                    value={taxRate}
+                    onChange={(e) => setTaxRate(Number(e.target.value))}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
+                  >
+                    {GST_RATES.map((rate) => (
+                      <option key={rate} value={rate}>
+                        {rate}% GST
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -359,20 +363,6 @@ export default function AddItemModal({ isOpen, onClose, editItem }: AddItemModal
                   <option value="Shop Counter">Shop Counter</option>
                 </select>
               </div>
-            </div>
-
-            {/* Toggle show in online store */}
-            <div className="pt-2 flex items-center justify-between border-t border-slate-200">
-              <div>
-                <p className="font-semibold text-slate-800">Show in Online Digital Store</p>
-                <p className="text-[11px] text-slate-500">Allow customers to view and order this product online</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={showInStore}
-                onChange={(e) => setShowInStore(e.target.checked)}
-                className="w-4 h-4 text-[#4c3cce] rounded accent-[#4c3cce]"
-              />
             </div>
           </div>
 

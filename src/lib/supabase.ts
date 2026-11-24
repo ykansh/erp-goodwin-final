@@ -54,7 +54,7 @@ export const COMPANIES: CompanyConfig[] = [
   {
     id: '00000000-0000-0000-0000-000000000001',
     code: 'goodwin-1',
-    name: 'Goodwin Batteries Pvt. Ltd.',
+    name: 'Goodwin Batteries',
     displayName: 'Goodwin Batteries (With GST)',
     shortName: 'GB 1',
     tagline: 'Main Branch • GST Enterprise Suite',
@@ -73,14 +73,14 @@ export const COMPANIES: CompanyConfig[] = [
     bankName: '',
     accountNumber: '',
     ifsc: '',
-    hasPos: true,
+    hasPos: false,
     hasGstReports: true,
-    hasOnlineStore: true,
+    hasOnlineStore: false,
   },
   {
     id: '00000000-0000-0000-0000-000000000002',
     code: 'goodwin-2',
-    name: 'Goodwin Batteries Pvt. Ltd.',
+    name: 'Goodwin Batteries',
     displayName: 'Goodwin Batteries (Without GST)',
     shortName: 'GB 2',
     tagline: 'Unit 2 • Fast Invoicing & Inventory (Without GST)',
@@ -108,8 +108,9 @@ export const COMPANIES: CompanyConfig[] = [
 
 // Helper to convert company settings to BusinessProfile
 export function companyToBusinessProfile(company: CompanyConfig): BusinessProfile {
+  const cleanName = (company.name || 'Goodwin Batteries').replace(/\s*Pvt\.?\s*Ltd\.?/gi, '').trim();
   return {
-    businessName: company.name || 'Goodwin Batteries Pvt. Ltd.',
+    businessName: cleanName,
     gstin: company.gstin || '23AABCG1234F1Z5',
     phone: company.phone || '+91 9667724411',
     email: company.email || 'info@goodwinbatteries.com',
@@ -127,7 +128,7 @@ export function companyToBusinessProfile(company: CompanyConfig): BusinessProfil
     bankDetails: company.bankName && company.accountNumber
       ? `${company.bankName} - A/C: ${company.accountNumber} - IFSC: ${company.ifsc}`
       : '',
-    storeTagline: `Authorized Manufacturer of Automotive & Inverter Batteries - ${company.name || 'Goodwin Batteries Pvt. Ltd.'}`,
+    storeTagline: `Authorized Manufacturer of Automotive & Inverter Batteries - ${cleanName}`,
     storeNotice: '⚡ Express dispatch across MP & Maharashtra!',
     enableOnlineStore: company.hasOnlineStore,
   };
@@ -151,7 +152,7 @@ export async function fetchCompanyFromSupabase(companyId: string): Promise<Compa
     const baseConfig = COMPANIES.find((c) => c.id === companyId) || COMPANIES[0];
     return {
       ...baseConfig,
-      name: 'Goodwin Batteries Pvt. Ltd.',
+      name: 'Goodwin Batteries',
       displayName: baseConfig.displayName,
       gstin: data.gstin || baseConfig.gstin,
       address: data.address || baseConfig.address,
@@ -171,35 +172,58 @@ export async function fetchCompanyFromSupabase(companyId: string): Promise<Compa
 }
 
 /**
- * Fetch staff members from Supabase hrms_employees table
+ * Fetch staff members from Supabase hrms_employees table (Deprecated - returns empty to prevent phantom dummy staff)
  */
 export async function fetchEmployeesFromSupabase() {
+  return [];
+}
+
+/**
+ * Permanently purge obsolete dummy records from hrms_employees table in Supabase
+ */
+export async function clearHrmsEmployeesInSupabase(): Promise<boolean> {
   try {
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('hrms_employees')
-      .select('*')
-      .order('status', { ascending: true });
-
-    if (error || !data) return [];
-
-    return data
-      .filter((e: any) => e.first_name && e.first_name.trim().length > 0)
-      .map((e: any) => ({
-        id: e.id,
-        name: `${e.first_name} ${e.last_name || ''}`.trim(),
-        phone: e.phone ? (e.phone.startsWith('+91') ? e.phone : `+91 ${e.phone}`) : '',
-        email: e.email || '',
-        role: (e.designation?.toLowerCase().includes('sde') || e.department?.toLowerCase().includes('engineer'))
-          ? 'OWNER'
-          : (e.designation?.toLowerCase().includes('intern') || e.designation?.toLowerCase().includes('account'))
-          ? 'BILLER'
-          : 'MANAGER',
-        status: (e.status === 'Active' ? 'ACTIVE' : 'INVITED') as 'ACTIVE' | 'INVITED',
-        designation: e.designation || 'Staff',
-      }));
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) console.warn('[Supabase] Could not clear hrms_employees:', error);
+    return !error;
   } catch (err) {
-    console.error('[Supabase] Error fetching employees:', err);
-    return [];
+    console.warn('[Supabase] Error clearing hrms_employees:', err);
+    return false;
+  }
+}
+
+/**
+ * Insert staff member into Supabase hrms_employees table
+ */
+export async function insertEmployeeToSupabase(params: {
+  name: string;
+  phone?: string;
+  email?: string;
+  designation?: string;
+}) {
+  try {
+    const parts = params.name.trim().split(/\s+/);
+    const firstName = parts[0] || params.name.trim();
+    const lastName = parts.slice(1).join(' ') || '';
+    const empId = `EMP-${Date.now().toString().slice(-4)}`;
+
+    await supabase.from('hrms_employees').insert([
+      {
+        employee_id: empId,
+        first_name: firstName,
+        last_name: lastName,
+        email: params.email || '',
+        phone: params.phone || '',
+        department: 'Sales & Billing',
+        designation: params.designation || 'Sales & Billing Executive',
+        status: 'Active',
+      },
+    ]);
+  } catch (err) {
+    console.warn('[Supabase] Error inserting into hrms_employees:', err);
   }
 }
 
@@ -389,15 +413,16 @@ export async function fetchPartiesFromSupabase(companyCode: 'goodwin-1' | 'goodw
       return {
         id: c.id,
         name: c.name,
-        type: 'CUSTOMER',
+        type: String(c.type || '').toLowerCase() === 'supplier' ? 'SUPPLIER' : 'CUSTOMER',
         phone: c.contact || '',
         email: c.email || '',
         gstin: c.gstin || '',
         state: 'Madhya Pradesh',
         stateCode,
         address: c.address ? c.address.replace('[GB2]', '').trim() : '',
-        creditLimit: Number(c.credit_limit) || 200000,
+        creditLimit: Number(c.credit_limit) || 0,
         currentBalance: Number(c.outstanding) || 0,
+        createdAt: c.created_at ? String(c.created_at).split('T')[0] : new Date().toISOString().split('T')[0],
       };
     });
   } catch (err) {
@@ -423,11 +448,11 @@ export async function insertCustomerToSupabase(
     const payload = {
       uoi,
       name: party.name,
-      contact: party.phone,
-      email: party.email,
-      gstin: party.gstin,
-      type: 'dealer',
-      credit_limit: party.creditLimit || 300000,
+      contact: party.phone || '',
+      email: party.email || null,
+      gstin: party.gstin || null,
+      type: party.type === 'SUPPLIER' ? 'supplier' : 'dealer',
+      credit_limit: party.creditLimit || 0,
       outstanding: party.currentBalance || 0,
       address,
     };
@@ -455,6 +480,7 @@ export async function insertCustomerToSupabase(
       address: party.address,
       creditLimit: Number(data.credit_limit),
       currentBalance: Number(data.outstanding),
+      createdAt: data.created_at ? String(data.created_at).split('T')[0] : (party.createdAt || new Date().toISOString().split('T')[0]),
     };
   } catch (err) {
     console.error('[Supabase] Error inserting party:', err);
@@ -564,8 +590,36 @@ export async function fetchInvoicesFromSupabase(companyCode: 'goodwin-1' | 'good
       }
 
       const grandTotal = Number(inv.grand_total) || 0;
-      const outstanding = Number(inv.outstanding) || 0;
-      const isPaid = inv.status === 'paid' || outstanding === 0;
+      const statusLower = String(inv.status || inv.payment_status || '').toLowerCase();
+      const resolvedStatus: 'PAID' | 'PARTIAL' | 'UNPAID' =
+        meta.paymentStatus === 'UNPAID' || statusLower === 'unpaid'
+          ? 'UNPAID'
+          : meta.paymentStatus === 'PARTIAL' || statusLower === 'partial'
+          ? 'PARTIAL'
+          : meta.paymentStatus === 'PAID' || statusLower === 'paid'
+          ? 'PAID'
+          : Number(inv.outstanding) > 0
+          ? Number(inv.outstanding) < grandTotal
+            ? 'PARTIAL'
+            : 'UNPAID'
+          : 'PAID';
+
+      const resolvedPaidAmount =
+        resolvedStatus === 'PAID'
+          ? grandTotal
+          : resolvedStatus === 'UNPAID'
+          ? 0
+          : typeof meta.paidAmount === 'number'
+          ? meta.paidAmount
+          : Math.max(0, grandTotal - (Number(inv.outstanding) || 0));
+
+      const resolvedBalanceAmount =
+        resolvedStatus === 'PAID'
+          ? 0
+          : resolvedStatus === 'UNPAID'
+          ? grandTotal
+          : Math.max(0, grandTotal - resolvedPaidAmount);
+
       const isQuotation = (inv.invoice_type || '').toLowerCase().includes('quotation');
 
       return {
@@ -588,21 +642,22 @@ export async function fetchInvoicesFromSupabase(companyCode: 'goodwin-1' | 'good
         placeOfSupply: inv.place_of_supply || meta.placeOfSupply || 'Madhya Pradesh',
         placeOfDelivery: inv.place_of_delivery || meta.placeOfDelivery || 'Madhya Pradesh',
         referenceName: inv.reference_name || meta.referenceName || '',
+        employeeName: meta.employeeName || inv.reference_name || meta.referenceName || 'Ansh Chourasiya',
         pvtMarka: inv.pvt_marka || meta.pvtMarka || '',
         partyStateCode: stateCode,
         invoiceDate: inv.date || new Date().toISOString().split('T')[0],
         dueDate: inv.date || new Date().toISOString().split('T')[0],
         subtotal: Number(inv.taxable_amount || grandTotal * 0.78),
         discountTotal: Number(inv.discount || 0),
-        taxTotal: Number(inv.gst_amount || grandTotal * 0.22),
+        taxTotal: Number(inv.gst_amount ?? 0),
         cgstTotal: Number(inv.gst_amount ? inv.gst_amount / 2 : 0),
         sgstTotal: Number(inv.gst_amount ? inv.gst_amount / 2 : 0),
         igstTotal: 0,
         roundOff: 0,
         totalAmount: grandTotal,
-        paidAmount: isPaid ? grandTotal : Math.max(0, grandTotal - outstanding),
-        balanceAmount: isPaid ? 0 : outstanding,
-        paymentStatus: isPaid ? 'PAID' : (outstanding < grandTotal ? 'PARTIAL' : 'UNPAID'),
+        paidAmount: resolvedPaidAmount,
+        balanceAmount: resolvedBalanceAmount,
+        paymentStatus: resolvedStatus,
         paymentMode: (meta.paymentMode || (inv.payment_mode ? inv.payment_mode.toUpperCase() : 'UPI')) as any,
         paymentReference: meta.paymentReference || '',
         items,
@@ -640,10 +695,13 @@ export async function insertInvoiceToSupabase(
       placeOfSupply: invoice.placeOfSupply || 'Madhya Pradesh',
       placeOfDelivery: invoice.placeOfDelivery || invoice.placeOfSupply || 'Madhya Pradesh',
       referenceName: invoice.referenceName || '',
+      employeeName: invoice.employeeName || invoice.referenceName || '',
       pvtMarka: invoice.pvtMarka || '',
       paymentMode: invoice.paymentMode || 'UPI',
       paymentReference: invoice.paymentReference || '',
       paymentStatus: invoice.paymentStatus,
+      paidAmount: invoice.paidAmount,
+      balanceAmount: invoice.balanceAmount,
     };
     const prefixTag = companyCode === 'goodwin-2' ? '[GB2]' : '';
     const notesStr = `${prefixTag} [META:${JSON.stringify(extraMeta)}]`.trim();
@@ -780,15 +838,23 @@ export async function updateInvoiceInSupabase(
       placeOfSupply: updated.placeOfSupply || 'Madhya Pradesh',
       placeOfDelivery: updated.placeOfDelivery || updated.placeOfSupply || 'Madhya Pradesh',
       referenceName: updated.referenceName || '',
+      employeeName: updated.employeeName || updated.referenceName || '',
       pvtMarka: updated.pvtMarka || '',
       paymentMode: updated.paymentMode || 'UPI',
       paymentReference: updated.paymentReference || '',
       paymentStatus: updated.paymentStatus,
+      paidAmount: updated.paidAmount,
+      balanceAmount: updated.balanceAmount,
     };
     const prefixTag = companyCode === 'goodwin-2' ? '[GB2]' : '';
     payload.notes = `${prefixTag} [META:${JSON.stringify(extraMeta)}]`.trim();
 
-    const { error } = await supabase.from('sales_invoices').update(payload).eq('id', id);
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const query = isUuid
+      ? supabase.from('sales_invoices').update(payload).eq('id', id)
+      : supabase.from('sales_invoices').update(payload).eq('invoice_number', updated.invoiceNumber || '');
+
+    const { error } = await query;
     if (error) {
       console.error('[Supabase] Error updating invoice:', error);
       return false;
@@ -801,14 +867,30 @@ export async function updateInvoiceInSupabase(
 }
 
 /**
- * Delete invoice in Supabase
+ * Delete invoice in Supabase and clean up any linked payments
  */
-export async function deleteInvoiceInSupabase(id: string): Promise<boolean> {
+export async function deleteInvoiceInSupabase(id: string, invoiceNumber?: string): Promise<boolean> {
   try {
-    const { error } = await supabase.from('sales_invoices').delete().eq('id', id);
-    if (error) {
-      console.error('[Supabase] Error deleting invoice:', error);
-      return false;
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    let invNum = invoiceNumber;
+    if (!invNum && !isUuid) {
+      invNum = id;
+    }
+
+    // If we have an invoice number, clean up any payments referencing this invoice
+    if (invNum) {
+      await supabase.from('payments').delete().or(`reference.eq.INV-${invNum},reference.eq.${invNum}`);
+      await supabase.from('sales_invoices').delete().eq('invoice_number', invNum);
+    }
+
+    if (isUuid) {
+      if (!invNum) {
+        const { data } = await supabase.from('sales_invoices').select('invoice_number').eq('id', id).maybeSingle();
+        if (data?.invoice_number) {
+          await supabase.from('payments').delete().or(`reference.eq.INV-${data.invoice_number},reference.eq.${data.invoice_number}`);
+        }
+      }
+      await supabase.from('sales_invoices').delete().eq('id', id);
     }
     return true;
   } catch (err) {
@@ -837,8 +919,8 @@ export async function fetchPaymentsFromSupabase(companyCode: 'goodwin-1' | 'good
 
     return filtered.map((p: any) => ({
       id: p.id,
-      partyId: p.party_id || 'party-1',
-      partyName: p.party_name || 'Customer',
+      partyId: p.party_id || '',
+      partyName: p.party_name || '',
       type: (p.direction === 'out' ? 'PAYMENT_OUT' : 'PAYMENT_IN') as 'PAYMENT_IN' | 'PAYMENT_OUT',
       amount: Number(p.amount) || 0,
       paymentMode: (p.payment_mode ? p.payment_mode.toUpperCase() : 'UPI') as any,

@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 import CreateInvoiceModal from '@/components/CreateInvoiceModal';
 import InvoiceDetailModal from '@/components/sales/InvoiceDetailModal';
+import CreateUserModal from '@/components/CreateUserModal';
 import { useApp } from '@/context/AppContext';
 import { MockInvoice } from '@/lib/mockData';
 import { formatINR } from '@/lib/utils';
@@ -26,6 +27,8 @@ import {
   Sparkles,
   FileText,
   Edit,
+  UserPlus,
+  Shield,
 } from 'lucide-react';
 
 export default function SalesPage() {
@@ -38,29 +41,96 @@ export default function SalesPage() {
     selectedCompany,
     isAdmin,
     isEmployee,
+    isTestMode,
+    currentUser,
+    employees,
+    refreshSystemUsers,
   } = useApp();
 
+  const isGB2 = selectedCompany?.code === 'goodwin-2';
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedType, setSelectedType] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
+  const [selectedEmployee, setSelectedEmployee] = useState('ALL');
+
+  // Date range filter
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [datePreset, setDatePreset] = useState<'ALL' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM'>('ALL');
+
+  const handleSelectDatePreset = (preset: 'ALL' | 'THIS_MONTH' | 'LAST_MONTH' | 'CUSTOM') => {
+    setDatePreset(preset);
+    const now = new Date();
+    if (preset === 'ALL') {
+      setFromDate('');
+      setToDate('');
+    } else if (preset === 'THIS_MONTH') {
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
+      setFromDate(`${y}-${m}-01`);
+      setToDate(`${y}-${m}-${String(lastDay).padStart(2, '0')}`);
+    } else if (preset === 'LAST_MONTH') {
+      const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const y = prevDate.getFullYear();
+      const m = String(prevDate.getMonth() + 1).padStart(2, '0');
+      const lastDay = new Date(y, prevDate.getMonth() + 1, 0).getDate();
+      setFromDate(`${y}-${m}-01`);
+      setToDate(`${y}-${m}-${String(lastDay).padStart(2, '0')}`);
+    }
+  };
 
   // Modals
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
   const [billingModalType, setBillingModalType] = useState<'TAX_INVOICE' | 'QUOTATION'>('TAX_INVOICE');
   const [viewingInvoice, setViewingInvoice] = useState<MockInvoice | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<MockInvoice | null>(null);
+  const [isCreateEmployeeModalOpen, setIsCreateEmployeeModalOpen] = useState(false);
 
-  // Financial Metrics
-  const totalSales = invoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
-  const totalPaid = invoices.reduce((acc, inv) => acc + inv.paidAmount, 0);
-  const totalDue = invoices.reduce((acc, inv) => acc + inv.balanceAmount, 0);
+  const getInvoiceEmployeeName = (inv: MockInvoice) =>
+    (inv.employeeName || inv.referenceName || 'Ansh Chourasiya').trim();
+
+  // RBAC & Date Filter: Admin sees all (or selected employee); Employee sees ONLY their own invoices; filtered by From-To date
+  const roleScopedInvoices = invoices.filter((inv) => {
+    if (isEmployee) {
+      const targetName = (
+        selectedEmployee !== 'ALL' && isTestMode ? selectedEmployee : currentUser.name
+      )
+        .trim()
+        .toLowerCase();
+      if (getInvoiceEmployeeName(inv).toLowerCase() !== targetName) return false;
+    } else if (selectedEmployee !== 'ALL') {
+      if (getInvoiceEmployeeName(inv).toLowerCase() !== selectedEmployee.trim().toLowerCase()) {
+        return false;
+      }
+    }
+
+    // From Date - To Date check
+    if (fromDate && inv.invoiceDate && inv.invoiceDate < fromDate) return false;
+    if (toDate && inv.invoiceDate && inv.invoiceDate > toDate) return false;
+
+    return true;
+  });
+
+  // Financial Metrics (Only confirmed invoices, excluding Quotations / Estimates)
+  const confirmedInvoices = roleScopedInvoices.filter((inv) => inv.invoiceType !== 'QUOTATION');
+  const quotationInvoices = roleScopedInvoices.filter((inv) => inv.invoiceType === 'QUOTATION');
+  const totalSales = confirmedInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
+  const totalPaid = confirmedInvoices.reduce((acc, inv) => acc + inv.paidAmount, 0);
+  const totalDue = confirmedInvoices.reduce((acc, inv) => acc + inv.balanceAmount, 0);
+  const totalGstTax = confirmedInvoices.reduce((acc, inv) => acc + (Number(inv.taxTotal) || 0), 0);
+  const totalEstimates = quotationInvoices.reduce((acc, inv) => acc + inv.totalAmount, 0);
 
   // Filter Invoices
-  const filteredInvoices = invoices.filter((inv) => {
+  const filteredInvoices = roleScopedInvoices.filter((inv) => {
+    const q = searchQuery.toLowerCase();
+    const empName = getInvoiceEmployeeName(inv).toLowerCase();
     const matchesSearch =
-      inv.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inv.partyName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inv.partyPhone.includes(searchQuery);
+      inv.invoiceNumber.toLowerCase().includes(q) ||
+      inv.partyName.toLowerCase().includes(q) ||
+      inv.partyPhone.includes(searchQuery) ||
+      inv.invoiceDate.toLowerCase().includes(q) ||
+      empName.includes(q);
 
     const matchesType = selectedType === 'ALL' || inv.invoiceType === selectedType;
     const matchesStatus = selectedStatus === 'ALL' || inv.paymentStatus === selectedStatus;
@@ -99,26 +169,37 @@ export default function SalesPage() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-black text-slate-900 tracking-tight">
-                  Sales Invoices &amp; Estimates
+                  {isEmployee ? `My Sales Invoices & Estimates (${currentUser.name})` : 'Sales Invoices & Estimates'}
                 </h1>
                 <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-indigo-50 text-[#4c3cce]">
-                  {invoices.length} Total Bills
+                  {roleScopedInvoices.length} Bills
+                </span>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                    isAdmin ? 'bg-indigo-100 text-[#4c3cce]' : 'bg-amber-100 text-amber-800'
+                  }`}
+                >
+                  {isAdmin ? '👑 Admin: All Staff' : '👤 Employee: Own Bills Only'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Manage GST tax invoices, quotations, proformas &amp; track customer payment status
+                {isEmployee
+                  ? 'Viewing your own sales invoices, estimates, Got Money (Paid), and Money To Be Taken'
+                  : 'Manage GST tax invoices, quotations, employee sales & track customer payment status'}
               </p>
             </div>
 
-            <div className="flex items-center gap-2.5">
-              <button
-                onClick={() => exportInvoicesToCSV(invoices, selectedCompany.displayName)}
-                className="h-9 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
-                title="Download sales invoices spreadsheet"
-              >
-                <Download size={14} className="text-emerald-600" />
-                <span>Export CSV</span>
-              </button>
+            <div className="flex flex-wrap items-center gap-2.5">
+              {isAdmin && (
+                <button
+                  onClick={() => exportInvoicesToCSV(roleScopedInvoices, selectedCompany.displayName)}
+                  className="h-9 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                  title="Download sales invoices spreadsheet"
+                >
+                  <Download size={14} className="text-emerald-600" />
+                  <span>Export CSV</span>
+                </button>
+              )}
 
               <button
                 onClick={() => {
@@ -151,16 +232,20 @@ export default function SalesPage() {
             {/* Total Sales */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
               <span className="text-[11px] font-semibold text-slate-500 uppercase">
-                Total Invoiced
+                {isEmployee ? 'My Total Sales' : 'Total Invoiced (Sales)'}
               </span>
               <p className="text-xl font-black text-slate-900 mt-1">{formatINR(totalSales)}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Gross billed sales revenue</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                {!isGB2
+                  ? `Includes GST Tax: ${formatINR(totalGstTax)}`
+                  : `${confirmedInvoices.length} confirmed bills`}
+              </p>
             </div>
 
-            {/* Collected / Paid */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase">
-                Payment Collected
+            {/* Collected / Got Money (Paid) */}
+            <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+              <span className="text-[11px] font-bold text-emerald-600 uppercase">
+                Got Money (Paid)
               </span>
               <p className="text-xl font-black text-emerald-600 mt-1">{formatINR(totalPaid)}</p>
               <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
@@ -168,40 +253,61 @@ export default function SalesPage() {
               </p>
             </div>
 
-            {/* Balance Due */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase">
-                Pending Balance Due
+            {/* Money To Be Taken / Balance Due */}
+            <div className="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs">
+              <span className="text-[11px] font-bold text-rose-600 uppercase">
+                Money To Be Taken (Due)
               </span>
               <p className="text-xl font-black text-rose-600 mt-1">{formatINR(totalDue)}</p>
               <p className="text-[10px] text-rose-500 font-medium mt-0.5">
-                Across partial/unpaid bills
+                Across partial/unpaid bills (Red)
               </p>
             </div>
 
-            {/* Invoices Count */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-              <span className="text-[11px] font-semibold text-slate-500 uppercase">
-                Vouchers Created
+            {/* Sales Estimates (Quotations) */}
+            <div className="bg-white p-4 rounded-2xl border border-amber-200 shadow-2xs">
+              <span className="text-[11px] font-bold text-amber-700 uppercase">
+                Sales Estimates (Quotations)
               </span>
-              <p className="text-xl font-black text-[#4c3cce] mt-1">{invoices.length} Bills</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">100% GST Compliant</p>
+              <p className="text-xl font-black text-amber-700 mt-1">{formatINR(totalEstimates)}</p>
+              <p className="text-[10px] text-amber-700 font-semibold mt-0.5">
+                {quotationInvoices.length} estimates • {confirmedInvoices.length} confirmed bills
+              </p>
             </div>
           </div>
 
           {/* Search & Filters */}
           <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
             {/* Search */}
-            <div className="relative flex-1 min-w-[240px]">
+            <div className="relative flex-1 min-w-[220px]">
               <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search invoice number, customer name, mobile..."
+                placeholder="Search invoice number, customer name, mobile, employee..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#4c3cce]"
               />
             </div>
+
+            {/* Employee Name Dropdown Filter (Admin or Test Mode) */}
+            {(isAdmin || isTestMode) && (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 font-semibold">Employee:</span>
+                <select
+                  value={selectedEmployee}
+                  onChange={(e) => setSelectedEmployee(e.target.value)}
+                  className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
+                >
+                  {!isTestMode && <option value="ALL">All Employees ({employees.length})</option>}
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.name}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Voucher Type Filter */}
             <div className="flex items-center gap-2">
@@ -262,6 +368,97 @@ export default function SalesPage() {
                 Unpaid
               </button>
             </div>
+
+            {/* Date Range & Month Filter Controls */}
+            <div className="w-full pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-slate-600 flex items-center gap-1">
+                  <Calendar size={13} className="text-[#4c3cce]" />
+                  <span>Date Range:</span>
+                </span>
+
+                {/* Presets */}
+                <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDatePreset('ALL')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                      datePreset === 'ALL'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    All Time
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDatePreset('THIS_MONTH')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                      datePreset === 'THIS_MONTH'
+                        ? 'bg-[#4c3cce] text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    This Month
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDatePreset('LAST_MONTH')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                      datePreset === 'LAST_MONTH'
+                        ? 'bg-[#4c3cce] text-white shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Last Month
+                  </button>
+                </div>
+
+                {/* From Date - To Date Inputs */}
+                <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">From</span>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => {
+                      setFromDate(e.target.value);
+                      setDatePreset('CUSTOM');
+                    }}
+                    className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">To</span>
+                  <input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => {
+                      setToDate(e.target.value);
+                      setDatePreset('CUSTOM');
+                    }}
+                    className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none"
+                  />
+                  {(fromDate || toDate) && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectDatePreset('ALL')}
+                      title="Clear date filter"
+                      className="text-slate-400 hover:text-rose-600 font-bold px-1 text-sm"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Filter Status Badge */}
+              <div className="text-[11px] text-slate-500 font-semibold">
+                Showing <strong className="text-slate-900">{roleScopedInvoices.length}</strong> bills
+                {(fromDate || toDate) && (
+                  <span className="ml-1 text-[#4c3cce] font-bold">
+                    ({fromDate || 'Start'} to {toDate || 'Today'})
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Invoices Table */}
@@ -273,7 +470,8 @@ export default function SalesPage() {
                     <th className="py-3 px-4">Date</th>
                     <th className="py-3 px-3">Invoice Number</th>
                     <th className="py-3 px-3">Customer Name</th>
-                    <th className="py-3 px-3">Voucher Type</th>
+                    <th className="py-3 px-3">Employee Name</th>
+                    {!isGB2 && <th className="py-3 px-3 text-right">GST Tax (₹)</th>}
                     <th className="py-3 px-3 text-right">Amount (₹)</th>
                     <th className="py-3 px-3 text-right">Balance Due</th>
                     <th className="py-3 px-3 text-center">Status</th>
@@ -283,7 +481,7 @@ export default function SalesPage() {
                 <tbody className="divide-y divide-slate-100">
                   {filteredInvoices.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-400">
+                      <td colSpan={!isGB2 ? 9 : 8} className="py-12 text-center text-slate-400">
                         No invoices found matching criteria.
                       </td>
                     </tr>
@@ -305,23 +503,23 @@ export default function SalesPage() {
                           </p>
                           <span className="font-mono text-[10px] text-slate-400">
                             +91 {inv.partyPhone}
+                            {!isGB2 && inv.partyGstin ? ` • GST: ${inv.partyGstin}` : ''}
                           </span>
                         </td>
 
-                        {/* Type Badge */}
+                        {/* Employee Name */}
                         <td className="py-3 px-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              inv.invoiceType === 'QUOTATION'
-                                ? 'bg-amber-100 text-amber-800'
-                                : inv.invoiceType === 'BILL_OF_SUPPLY'
-                                ? 'bg-slate-200 text-slate-800'
-                                : 'bg-indigo-50 text-[#4c3cce]'
-                            }`}
-                          >
-                            {inv.invoiceType === 'QUOTATION' ? 'Quotation' : inv.invoiceType}
+                          <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-[#4c3cce] border border-indigo-100">
+                            {getInvoiceEmployeeName(inv)}
                           </span>
                         </td>
+
+                        {/* GST Tax (With GST Portal) */}
+                        {!isGB2 && (
+                          <td className="py-3 px-3 text-right font-mono font-semibold text-[#4c3cce]">
+                            {formatINR(inv.taxTotal || 0)}
+                          </td>
+                        )}
 
                         {/* Total Amount */}
                         <td className="py-3 px-3 text-right font-black text-slate-900">
@@ -473,6 +671,12 @@ export default function SalesPage() {
           setViewingInvoice(newInv);
           setEditingInvoice(null);
         }}
+      />
+
+      <CreateUserModal
+        isOpen={isCreateEmployeeModalOpen}
+        onClose={() => setIsCreateEmployeeModalOpen(false)}
+        onUserCreated={refreshSystemUsers}
       />
     </div>
   );

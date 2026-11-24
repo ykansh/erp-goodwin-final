@@ -51,6 +51,148 @@ interface BillLineItem {
   taxRate: number; // %
 }
 
+interface SearchableProductSelectProps {
+  selectedItemId: string;
+  items: MockItem[];
+  onSelect: (item: MockItem) => void;
+  placeholder?: string;
+}
+
+function SearchableProductSelect({
+  selectedItemId,
+  items,
+  onSelect,
+  placeholder = 'Type to search item...',
+}: SearchableProductSelectProps) {
+  const selectedItem = items.find((i) => i.id === selectedItemId);
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredItems = React.useMemo(() => {
+    if (!searchQuery.trim()) return items;
+    const q = searchQuery.toLowerCase().trim();
+    return items.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        (item.sku && item.sku.toLowerCase().includes(q)) ||
+        (item.category && item.category.toLowerCase().includes(q)) ||
+        (item.hsnCode && item.hsnCode.toLowerCase().includes(q))
+    );
+  }, [items, searchQuery]);
+
+  return (
+    <div className="relative w-full" ref={containerRef}>
+      <div className="relative flex items-center">
+        <input
+          ref={inputRef}
+          type="text"
+          value={isOpen ? searchQuery : (selectedItem?.name || '')}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            if (!isOpen) setIsOpen(true);
+          }}
+          onFocus={() => {
+            setIsOpen(true);
+            setSearchQuery('');
+          }}
+          placeholder={selectedItem ? selectedItem.name : placeholder}
+          className="w-full bg-white border border-slate-200 rounded-lg pl-2.5 pr-7 py-1.5 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#4c3cce] focus:ring-1 focus:ring-indigo-100 transition-all truncate cursor-pointer"
+        />
+        <button
+          type="button"
+          tabIndex={-1}
+          onClick={() => {
+            setIsOpen((prev) => !prev);
+            if (!isOpen) {
+              setSearchQuery('');
+              inputRef.current?.focus();
+            }
+          }}
+          className="absolute right-1 text-slate-400 hover:text-slate-700 p-1 rounded-md transition-colors"
+        >
+          <ChevronDown
+            size={14}
+            className={cn('transition-transform duration-150', isOpen && 'rotate-180')}
+          />
+        </button>
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-50 left-0 top-full mt-1 w-[300px] sm:w-[360px] max-h-64 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-2xl divide-y divide-slate-100">
+          <div className="px-3 py-1.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[10px] text-slate-500 font-bold uppercase tracking-wider sticky top-0 z-10">
+            <span>{filteredItems.length} Products Found</span>
+            <span>Type to filter</span>
+          </div>
+
+          {filteredItems.length === 0 ? (
+            <div className="p-4 text-center text-slate-400 text-xs">
+              No matching products found for &ldquo;{searchQuery}&rdquo;
+            </div>
+          ) : (
+            filteredItems.map((item) => {
+              const isSelected = item.id === selectedItemId;
+              const isLowStock = item.stock <= item.minStockAlert;
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => {
+                    onSelect(item);
+                    setIsOpen(false);
+                    setSearchQuery('');
+                  }}
+                  className={cn(
+                    'p-2.5 hover:bg-indigo-50/80 cursor-pointer flex items-center justify-between gap-2 transition-colors',
+                    isSelected && 'bg-indigo-50/50'
+                  )}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold text-xs text-slate-800 truncate">{item.name}</p>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-mono">
+                      {item.sku && <span>SKU: {item.sku}</span>}
+                      {item.hsnCode && <span>HSN: {item.hsnCode}</span>}
+                    </div>
+                  </div>
+
+                  <div className="text-right shrink-0">
+                    <span className="block font-bold text-xs text-slate-900 font-mono">
+                      {formatINR(item.salesPrice)}
+                    </span>
+                    <span
+                      className={cn(
+                        'inline-block px-1.5 py-0.2 rounded-sm text-[10px] font-bold font-mono',
+                        item.stock === 0
+                          ? 'bg-rose-100 text-rose-700'
+                          : isLowStock
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-emerald-50 text-emerald-700'
+                      )}
+                    >
+                      Stock: {item.stock} {item.unit}
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CreateInvoiceModal({
   isOpen,
   onClose,
@@ -59,8 +201,58 @@ export default function CreateInvoiceModal({
   defaultParty,
   editingInvoice,
 }: CreateInvoiceModalProps) {
-  const { items, parties, business, addInvoice, updateInvoice, selectedCompany } = useApp();
-  const isGB2 = selectedCompany?.code === 'goodwin-2';
+  const {
+    items,
+    parties,
+    invoices,
+    payments,
+    business,
+    addInvoice,
+    updateInvoice,
+    selectedCompany,
+    currentUser,
+    employees,
+    createSystemUser,
+    isAdmin,
+    isEmployee,
+  } = useApp();
+  const isGB2 =
+    selectedCompany?.code === 'goodwin-2' ||
+    editingInvoice?.companyCode === 'goodwin-2' ||
+    Boolean(editingInvoice?.invoiceNumber?.startsWith('GB2'));
+
+  const getPartyBalance = (party: MockParty) => {
+    let pIn = 0;
+    let pOut = 0;
+    invoices.forEach((inv) => {
+      if (
+        inv.invoiceType !== 'QUOTATION' &&
+        inv.partyName &&
+        party.name &&
+        inv.partyName.trim().toLowerCase() === party.name.trim().toLowerCase()
+      ) {
+        pIn += Number(inv.paidAmount) || 0;
+        pOut += Number(inv.totalAmount) || 0;
+      }
+    });
+    payments.forEach((pay) => {
+      if (pay.referenceNumber && pay.referenceNumber.startsWith('INV-')) return;
+      const idMatch = Boolean(pay.partyId && party.id && pay.partyId === party.id);
+      const nameMatch = Boolean(
+        pay.partyName &&
+          party.name &&
+          pay.partyName.trim().toLowerCase() === party.name.trim().toLowerCase()
+      );
+      if (!idMatch && !nameMatch) return;
+      const isOut =
+        pay.type === 'PAYMENT_OUT' ||
+        (pay as any).direction === 'out' ||
+        String((pay as any).type || '').toUpperCase() === 'PAYMENT_OUT';
+      if (isOut) pOut += Number(pay.amount) || 0;
+      else pIn += Number(pay.amount) || 0;
+    });
+    return pOut - pIn;
+  };
 
   // Invoice Type Switcher: Tax Invoice vs Quotation vs Bill of Supply
   const [invoiceType, setInvoiceType] = useState<'TAX_INVOICE' | 'QUOTATION' | 'BILL_OF_SUPPLY'>(
@@ -104,7 +296,7 @@ export default function CreateInvoiceModal({
   const [transportContactNumber, setTransportContactNumber] = useState('');
   const [transportGstin, setTransportGstin] = useState('');
   const [placeOfDelivery, setPlaceOfDelivery] = useState('Madhya Pradesh');
-  const [referenceName, setReferenceName] = useState('');
+  const [referenceName, setReferenceName] = useState(currentUser?.name || employees[0]?.name || 'Ansh Chourasiya');
   const [pvtMarka, setPvtMarka] = useState('');
 
   // Payment Settlement Options (1. Paid, 2. Partially Paid, 3. Unpaid)
@@ -179,7 +371,7 @@ export default function CreateInvoiceModal({
         setTransportContactNumber(editingInvoice.transportContactNumber || '');
         setTransportGstin(editingInvoice.transportGstin || '');
         setPlaceOfDelivery(editingInvoice.placeOfDelivery || 'Madhya Pradesh');
-        setReferenceName(editingInvoice.referenceName || '');
+        setReferenceName(editingInvoice.employeeName || editingInvoice.referenceName || currentUser?.name || '');
         setPvtMarka(editingInvoice.pvtMarka || '');
 
         if (editingInvoice.items && editingInvoice.items.length > 0) {
@@ -215,6 +407,7 @@ export default function CreateInvoiceModal({
         const type = initialType === 'QUOTATION' ? 'QUOTATION' : 'TAX_INVOICE';
         setInvoiceType(type);
         setInvoiceNumber(generateNumberForType(type));
+        setReferenceName(currentUser?.name || employees[0]?.name || 'Ansh Chourasiya');
         setIsSuccess(false);
         setCreatedInvoice(null);
         if (defaultParty) {
@@ -255,24 +448,27 @@ export default function CreateInvoiceModal({
     setShippingState('Madhya Pradesh');
   };
 
-  // Filter parties for dropdown search
+  // Filter parties for dropdown search (Name / Mobile / Date)
   const filteredParties = parties.filter((p) => {
     const query = customerSearchQuery.toLowerCase().trim();
     if (!query) return true;
+    const partyDate = (p.createdAt || invoiceDate).toLowerCase();
     return (
       p.name.toLowerCase().includes(query) ||
       p.phone.includes(query) ||
-      (p.gstin && p.gstin.toLowerCase().includes(query))
+      partyDate.includes(query)
     );
   });
 
   // Switch invoice type
   const handleTypeChange = (newType: 'TAX_INVOICE' | 'QUOTATION' | 'BILL_OF_SUPPLY') => {
     setInvoiceType(newType);
-    setInvoiceNumber(generateNumberForType(newType));
+    if (!editingInvoice) {
+      setInvoiceNumber(generateNumberForType(newType));
+    }
     if (newType === 'QUOTATION') {
       setPaymentStatus('UNPAID');
-    } else {
+    } else if (!editingInvoice) {
       setPaymentStatus('PAID');
     }
   };
@@ -403,10 +599,12 @@ export default function CreateInvoiceModal({
 
     setIsSubmitting(true);
     try {
-      const invNumber = invoiceNumber.trim() || generateNumberForType(invoiceType);
+      const invNumber = editingInvoice
+        ? editingInvoice.invoiceNumber
+        : invoiceNumber.trim() || generateNumberForType(invoiceType);
 
       const newInvoice: MockInvoice = {
-        id: `inv-${Date.now()}`,
+        id: editingInvoice ? editingInvoice.id : `inv-${Date.now()}`,
         invoiceNumber: invNumber,
         invoiceType,
         orderNumber: orderNumber.trim() || undefined,
@@ -424,7 +622,8 @@ export default function CreateInvoiceModal({
         transportGstin: transportGstin.trim() || undefined,
         placeOfSupply,
         placeOfDelivery: placeOfDelivery.trim() || 'Madhya Pradesh',
-        referenceName: referenceName.trim() || undefined,
+        referenceName: referenceName.trim() || currentUser?.name || undefined,
+        employeeName: referenceName.trim() || currentUser?.name || 'Admin',
         pvtMarka: pvtMarka.trim() || undefined,
         partyStateCode: placeOfSupply,
         invoiceDate,
@@ -456,21 +655,23 @@ export default function CreateInvoiceModal({
           igst: r.igst,
           total: r.total,
         })),
-        upiQrUrl: isGB2 ? undefined : upiQrDataUrl,
+        upiQrUrl: undefined,
       };
 
       let saved: MockInvoice | undefined;
       if (editingInvoice) {
         saved = await updateInvoice(newInvoice);
+        onClose();
+        if (onInvoiceCreated) {
+          onInvoiceCreated(saved || newInvoice);
+        }
+        return;
       } else {
         saved = await addInvoice(newInvoice);
       }
 
       setCreatedInvoice(saved || newInvoice);
       setIsSuccess(true);
-      if (onInvoiceCreated) {
-        onInvoiceCreated(saved || newInvoice);
-      }
     } finally {
       setIsSubmitting(false);
     }
@@ -526,16 +727,6 @@ export default function CreateInvoiceModal({
               </div>
             )}
 
-            {/* Dynamic UPI QR Code Preview (GST portal only) */}
-            {!isGB2 && upiQrDataUrl && createdInvoice.paymentStatus !== 'PAID' && (
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col items-center shadow-2xs">
-                <img src={upiQrDataUrl} alt="UPI QR" className="w-32 h-32 rounded-lg" />
-                <p className="text-[11px] font-mono text-slate-500 mt-2">
-                  Scan to Pay: <span className="font-bold text-slate-800">{business.upiId}</span>
-                </p>
-              </div>
-            )}
-
             <div className="flex flex-wrap gap-3 pt-3 justify-center">
               <button
                 onClick={() => {
@@ -556,7 +747,7 @@ export default function CreateInvoiceModal({
                   const docType = createdInvoice.invoiceType === 'QUOTATION' ? 'Quotation' : 'Invoice';
                   const text = `Dear ${createdInvoice.partyName}, your ${docType} ${createdInvoice.invoiceNumber} for ${formatINR(
                     createdInvoice.totalAmount
-                  )} from ${business.businessName || 'Goodwin Batteries Pvt. Ltd.'} is ready. Pay using UPI: ${business.upiId}`;
+                  )} from ${business.businessName || 'Goodwin Batteries'} is ready.`;
                   window.open(`https://wa.me/91${createdInvoice.partyPhone}?text=${encodeURIComponent(text)}`, '_blank');
                 }}
                 className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs flex items-center gap-2 shadow-2xs transition-colors"
@@ -682,7 +873,7 @@ export default function CreateInvoiceModal({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-black text-slate-900 text-sm tracking-tight">
-                        Goodwin Batteries Pvt. Ltd.
+                        Goodwin Batteries
                       </h3>
                       <span
                         className={cn(
@@ -699,7 +890,11 @@ export default function CreateInvoiceModal({
                       202, 2nd Floor – Samiksh Landmark, Near Choithram Circle, A.B. Road, Indore – 452012, Indore, Madhya Pradesh - 452012
                     </p>
                     <p className="text-[11px] text-slate-600 font-mono mt-0.5">
-                      <strong className="text-slate-800">GSTIN:</strong> 23AABCG1234F1Z5 |{' '}
+                      {!isGB2 && (
+                        <>
+                          <strong className="text-slate-800">GSTIN:</strong> 23AABCG1234F1Z5 |{' '}
+                        </>
+                      )}
                       <strong className="text-slate-800">Phone:</strong> +91 9667724411
                     </p>
                   </div>
@@ -721,7 +916,7 @@ export default function CreateInvoiceModal({
                       }`}
                     >
                       <ScanBarcode size={14} />
-                      <span>1. Sale Tax Invoice</span>
+                      <span>{isGB2 ? '1. Sale Bill (Without GST)' : '1. Sale Tax Invoice'}</span>
                     </button>
                     <button
                       type="button"
@@ -825,16 +1020,26 @@ export default function CreateInvoiceModal({
                     />
                   </div>
 
-                  {/* Reference Name */}
+                  {/* Employee Name Dropdown */}
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Reference Name</label>
-                    <input
-                      type="text"
+                    <label className="block font-semibold text-slate-700 mb-1">Employee Name *</label>
+                    <select
                       value={referenceName}
+                      disabled={isEmployee && !isAdmin}
                       onChange={(e) => setReferenceName(e.target.value)}
-                      placeholder="e.g. Rahul Sen"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-[#4c3cce]"
-                    />
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#4c3cce] disabled:bg-slate-100"
+                    >
+                      {editingInvoice &&
+                        referenceName &&
+                        !employees.some(
+                          (emp) => emp.name.toLowerCase() === referenceName.trim().toLowerCase()
+                        ) && <option value={referenceName}>{referenceName} (Historical)</option>}
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.name}>
+                          {emp.name} ({emp.role === 'ADMIN' ? 'Admin' : 'Employee'})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>
@@ -849,11 +1054,24 @@ export default function CreateInvoiceModal({
                     </h3>
                   </div>
 
-                  {selectedParty && (
+                  {selectedParty ? (
                     <div className="flex items-center gap-2 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg text-[11px]">
                       <UserCheck size={14} className="text-[#4c3cce]" />
                       <span className="font-semibold text-slate-800">
-                        Linked: <strong>{selectedParty.name}</strong> ({selectedParty.currentBalance >= 0 ? `Due: ${formatINR(selectedParty.currentBalance)}` : `Adv: ${formatINR(Math.abs(selectedParty.currentBalance))}`})
+                        {(() => {
+                          const bal = getPartyBalance(selectedParty);
+                          return (
+                            <>
+                              Linked: <strong>{selectedParty.name}</strong> (
+                              {bal > 0
+                                ? `To Take: ${formatINR(bal)}`
+                                : bal < 0
+                                ? `To Give: ${formatINR(Math.abs(bal))}`
+                                : 'Settled: ₹0.00'}
+                              )
+                            </>
+                          );
+                        })()}
                       </span>
                       <button
                         type="button"
@@ -864,7 +1082,14 @@ export default function CreateInvoiceModal({
                         ×
                       </button>
                     </div>
-                  )}
+                  ) : customerName.trim() ? (
+                    <div className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg text-[11px] text-emerald-800 font-semibold">
+                      <Sparkles size={13} className="text-emerald-600" />
+                      <span>
+                        New Customer <strong>{customerName.trim()}</strong> will be automatically saved to Parties Khata
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Customer Dropdown + Search Options Dual Row */}
@@ -889,7 +1114,7 @@ export default function CreateInvoiceModal({
                       <option value="">-- Choose from Customer Dropdown ({parties.length} available) --</option>
                       {parties.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} • {p.phone} {p.gstin ? `(${p.gstin})` : ''}
+                          {p.name} • {p.phone} • Date: {p.createdAt || invoiceDate}
                         </option>
                       ))}
                     </select>
@@ -898,7 +1123,7 @@ export default function CreateInvoiceModal({
                   {/* Option B: Searchable Customer Input */}
                   <div className="relative">
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Search Customer (Name / Mobile / GSTIN)
+                      Search Customer (Name / Mobile / Date)
                     </label>
                     <div className="relative flex items-center">
                       <Search size={15} className="absolute left-3 text-slate-400 pointer-events-none" />
@@ -910,7 +1135,7 @@ export default function CreateInvoiceModal({
                           setIsCustomerDropdownOpen(true);
                         }}
                         onFocus={() => setIsCustomerDropdownOpen(true)}
-                        placeholder="Type customer name, phone, or GSTIN to search..."
+                        placeholder="Type customer name, phone, or date (YYYY-MM-DD) to search..."
                         className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-10 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-[#4c3cce]"
                       />
                       <button
@@ -944,7 +1169,7 @@ export default function CreateInvoiceModal({
                                   </span>
                                 </div>
                                 <p className="text-[11px] text-slate-500 font-mono mt-0.5">
-                                  Mob: +91 {p.phone} {p.gstin ? `• GSTIN: ${p.gstin}` : ''}
+                                  Mob: +91 {p.phone} • Date: {p.createdAt || invoiceDate}
                                 </p>
                                 {p.address && (
                                   <p className="text-[10px] text-slate-400 truncate max-w-md">{p.address}</p>
@@ -952,16 +1177,27 @@ export default function CreateInvoiceModal({
                               </div>
 
                               <div className="text-right">
-                                <span
-                                  className={`font-mono font-bold text-xs ${
-                                    p.currentBalance >= 0 ? 'text-rose-600' : 'text-emerald-600'
-                                  }`}
-                                >
-                                  {p.currentBalance >= 0
-                                    ? `Due: ${formatINR(p.currentBalance)}`
-                                    : `Adv: ${formatINR(Math.abs(p.currentBalance))}`}
-                                </span>
-                                <span className="block text-[10px] text-slate-400">Khata Balance</span>
+                                {(() => {
+                                  const bal = getPartyBalance(p);
+                                  return (
+                                    <span
+                                      className={`font-mono font-bold text-xs ${
+                                        bal > 0
+                                          ? 'text-rose-600'
+                                          : bal < 0
+                                          ? 'text-emerald-600'
+                                          : 'text-slate-500'
+                                      }`}
+                                    >
+                                      {bal > 0
+                                        ? `To Take: ${formatINR(bal)}`
+                                        : bal < 0
+                                        ? `To Give: ${formatINR(Math.abs(bal))}`
+                                        : 'Settled: ₹0.00'}
+                                    </span>
+                                  );
+                                })()}
+                                <span className="block text-[10px] text-slate-400">Date: {p.createdAt || invoiceDate}</span>
                               </div>
                             </div>
                           ))
@@ -1009,23 +1245,37 @@ export default function CreateInvoiceModal({
                     />
                   </div>
 
-                  {/* Customer GSTIN */}
+                  {/* Date */}
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Customer GSTIN <span className="text-rose-600 font-bold">* Required</span>
+                      Date *
                     </label>
                     <input
-                      type="text"
-                      value={customerGstin}
-                      onChange={(e) => setCustomerGstin(e.target.value.toUpperCase())}
-                      placeholder="e.g. 23AABCX9988Z1"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
+                      type="date"
+                      value={invoiceDate}
+                      onChange={(e) => setInvoiceDate(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
                     />
-                    <span className="text-[10px] text-slate-500 block mt-0.5">Required for customer billing</span>
                   </div>
 
+                  {/* Customer GSTIN (shown in With GST Bill) */}
+                  {!isGB2 && (
+                    <div>
+                      <label className="block font-semibold text-[#4c3cce] mb-1">
+                        Customer GSTIN (With GST)
+                      </label>
+                      <input
+                        type="text"
+                        value={customerGstin}
+                        onChange={(e) => setCustomerGstin(e.target.value.toUpperCase())}
+                        placeholder="e.g. 23AAAAA0000A1Z5"
+                        className="w-full bg-white border border-indigo-200 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
+                      />
+                    </div>
+                  )}
+
                   {/* Billing Address */}
-                  <div className="sm:col-span-2">
+                  <div className={!isGB2 ? 'sm:col-span-1' : 'sm:col-span-2'}>
                     <label className="block font-semibold text-slate-700 mb-1">Billing Address</label>
                     <input
                       type="text"
@@ -1059,7 +1309,7 @@ export default function CreateInvoiceModal({
                   {/* Place of Supply */}
                   <div>
                     <label className="block font-semibold text-slate-700 mb-1">
-                      Place of Supply {isInterState ? '(IGST)' : '(CGST+SGST)'}
+                      Place of Supply {!isGB2 ? (isInterState ? '(IGST)' : '(CGST+SGST)') : ''}
                     </label>
                     <select
                       value={placeOfSupply}
@@ -1164,20 +1414,22 @@ export default function CreateInvoiceModal({
                     />
                   </div>
 
-                  {/* Transport GSTIN */}
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Transport GSTIN <span className="text-rose-600 font-bold">* Required</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={transportGstin}
-                      onChange={(e) => setTransportGstin(e.target.value.toUpperCase())}
-                      placeholder="e.g. 23TRANS1234F1Z1"
-                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
-                    />
-                    <span className="text-[10px] text-slate-500 block mt-0.5">Required for transport / e-Way</span>
-                  </div>
+                  {/* Transport GSTIN — only shown in GST portal (!isGB2) */}
+                  {!isGB2 && (
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">
+                        Transport GSTIN
+                      </label>
+                      <input
+                        type="text"
+                        value={transportGstin}
+                        onChange={(e) => setTransportGstin(e.target.value.toUpperCase())}
+                        placeholder="e.g. 23TRANS1234F1Z1"
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
+                      />
+                      <span className="text-[10px] text-slate-500 block mt-0.5">For transport / e-Way</span>
+                    </div>
+                  )}
 
                   {/* Pvt Marka */}
                   <div>
@@ -1212,16 +1464,17 @@ export default function CreateInvoiceModal({
                   </button>
                 </div>
 
-                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                <div className="border border-slate-200 rounded-xl overflow-visible shadow-xs">
                   <table className="w-full text-left border-collapse">
                     <thead>
                       <tr className="bg-slate-100 text-slate-700 font-semibold text-[11px] uppercase tracking-wider border-b border-slate-200">
-                        <th className="py-2.5 px-3">Item / Battery Product</th>
+                        <th className="py-2.5 px-3 min-w-[240px]">Item / Battery Product</th>
                         <th className="py-2.5 px-3 w-20">HSN</th>
                         <th className="py-2.5 px-3 w-24">Qty</th>
                         <th className="py-2.5 px-3 w-28">Rate (₹)</th>
                         <th className="py-2.5 px-3 w-20">Disc %</th>
-                        <th className="py-2.5 px-3 w-24">GST Rate</th>
+                        {!isGB2 && <th className="py-2.5 px-3 w-24">GST Rate</th>}
+                        {!isGB2 && <th className="py-2.5 px-3 w-24 text-right">GST Amt (₹)</th>}
                         <th className="py-2.5 px-3 w-28 text-right">Amount (₹)</th>
                         <th className="py-2.5 px-3 w-10"></th>
                       </tr>
@@ -1229,19 +1482,13 @@ export default function CreateInvoiceModal({
                     <tbody className="divide-y divide-slate-200">
                       {calculatedRows.map((row, idx) => (
                         <tr key={row.id} className="hover:bg-slate-50/70 transition-colors">
-                          {/* Item Select */}
-                          <td className="p-2">
-                            <select
-                              value={row.itemId}
-                              onChange={(e) => handleSelectItem(idx, e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-[#4c3cce]"
-                            >
-                              {items.map((item) => (
-                                <option key={item.id} value={item.id}>
-                                  {item.name} (Stock: {item.stock} {item.unit})
-                                </option>
-                              ))}
-                            </select>
+                          {/* Searchable Item Select & Dropdown */}
+                          <td className="p-2 relative min-w-[240px]">
+                            <SearchableProductSelect
+                              selectedItemId={row.itemId}
+                              items={items}
+                              onSelect={(chosen) => handleSelectItem(idx, chosen.id)}
+                            />
                           </td>
 
                           {/* HSN */}
@@ -1287,20 +1534,27 @@ export default function CreateInvoiceModal({
                             />
                           </td>
 
-                          {/* Tax Rate */}
-                          <td className="p-2">
-                            <select
-                              value={row.taxRate}
-                              onChange={(e) => updateItemRow(idx, 'taxRate', Number(e.target.value))}
-                              className="w-full bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-800"
-                            >
-                              {GST_RATES.map((rate) => (
-                                <option key={rate} value={rate}>
-                                  {rate}%
-                                </option>
-                              ))}
-                            </select>
-                          </td>
+                          {/* Tax Rate & GST Amount (Only in GST Portal) */}
+                          {!isGB2 && (
+                            <td className="p-2">
+                              <select
+                                value={row.taxRate}
+                                onChange={(e) => updateItemRow(idx, 'taxRate', Number(e.target.value))}
+                                className="w-full bg-white border border-slate-200 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-800"
+                              >
+                                {GST_RATES.map((rate) => (
+                                  <option key={rate} value={rate}>
+                                    {rate}%
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          )}
+                          {!isGB2 && (
+                            <td className="p-2 text-right font-mono font-semibold text-[#4c3cce]">
+                              {formatINR(row.totalTax)}
+                            </td>
+                          )}
 
                           {/* Total */}
                           <td className="p-2 text-right font-bold text-slate-900">
@@ -1543,49 +1797,39 @@ export default function CreateInvoiceModal({
 
               {/* CARD 6: BOTTOM SUMMARY & TAX BREAKDOWN */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                {/* Notes & Dynamic UPI QR (Only in GST Portal) */}
-                <div className="space-y-3">
-                  {!isGB2 && (
-                    <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-4">
-                      {upiQrDataUrl && (
-                        <img src={upiQrDataUrl} alt="UPI QR" className="w-20 h-20 rounded-md border border-slate-300" />
-                      )}
-                      <div>
-                        <h4 className="font-bold text-slate-800 text-xs">Dynamic UPI Payment QR</h4>
-                        <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
-                          Printed on invoice/quotation for instant counter payment via PhonePe, GPay, or Paytm.
-                        </p>
-                        <p className="text-[11px] font-mono text-[#4c3cce] font-semibold mt-1">
-                          VPA: {business.upiId}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <div className="space-y-3" />
 
                 {/* Bill Calculation Summary */}
                 <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
                   <div className="flex justify-between text-slate-600">
-                    <span>Taxable Subtotal:</span>
+                    <span>{isGB2 ? 'Subtotal:' : 'Taxable Subtotal:'}</span>
                     <span className="font-semibold text-slate-800">{formatINR(subtotal)}</span>
                   </div>
 
-                  {!isInterState ? (
+                  {!isGB2 && (
                     <>
-                      <div className="flex justify-between text-slate-600">
-                        <span>CGST:</span>
-                        <span className="font-semibold text-slate-800">{formatINR(cgstTotal)}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>SGST:</span>
-                        <span className="font-semibold text-slate-800">{formatINR(sgstTotal)}</span>
+                      {!isInterState ? (
+                        <>
+                          <div className="flex justify-between text-slate-600">
+                            <span>CGST:</span>
+                            <span className="font-semibold text-slate-800">{formatINR(cgstTotal)}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-600">
+                            <span>SGST:</span>
+                            <span className="font-semibold text-slate-800">{formatINR(sgstTotal)}</span>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="flex justify-between text-slate-600">
+                          <span>IGST (Inter-state):</span>
+                          <span className="font-semibold text-slate-800">{formatINR(igstTotal)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-[#4c3cce] font-bold pt-1 border-t border-slate-200/80">
+                        <span>Total GST Tax:</span>
+                        <span>{formatINR(taxTotal)}</span>
                       </div>
                     </>
-                  ) : (
-                    <div className="flex justify-between text-slate-600">
-                      <span>IGST (Inter-state):</span>
-                      <span className="font-semibold text-slate-800">{formatINR(igstTotal)}</span>
-                    </div>
                   )}
 
                   {roundOff !== 0 && (

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, ArrowDownLeft, ArrowUpRight, Check, Landmark, QrCode, Banknote } from 'lucide-react';
+import { X, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
 import { MockParty } from '@/lib/mockData';
 import { formatINR } from '@/lib/utils';
@@ -19,7 +19,7 @@ export default function RecordPaymentModal({
   defaultParty,
   defaultType = 'PAYMENT_IN',
 }: RecordPaymentModalProps) {
-  const { parties, recordPayment } = useApp();
+  const { parties, invoices, payments, recordPayment } = useApp();
 
   const [type, setType] = useState<'PAYMENT_IN' | 'PAYMENT_OUT'>(defaultType);
   const [selectedPartyId, setSelectedPartyId] = useState<string>('');
@@ -29,16 +29,51 @@ export default function RecordPaymentModal({
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
 
+  const getPartyBalance = (party: MockParty) => {
+    let pIn = 0;
+    let pOut = 0;
+    invoices.forEach((inv) => {
+      if (
+        inv.invoiceType !== 'QUOTATION' &&
+        inv.partyName &&
+        party.name &&
+        inv.partyName.trim().toLowerCase() === party.name.trim().toLowerCase()
+      ) {
+        pIn += Number(inv.paidAmount) || 0;
+        pOut += Number(inv.totalAmount) || 0;
+      }
+    });
+    payments.forEach((pay) => {
+      if (pay.referenceNumber && pay.referenceNumber.startsWith('INV-')) return;
+      const idMatch = Boolean(pay.partyId && party.id && pay.partyId === party.id);
+      const nameMatch = Boolean(
+        pay.partyName &&
+          party.name &&
+          pay.partyName.trim().toLowerCase() === party.name.trim().toLowerCase()
+      );
+      if (!idMatch && !nameMatch) return;
+      const isOut =
+        pay.type === 'PAYMENT_OUT' ||
+        (pay as any).direction === 'out' ||
+        String((pay as any).type || '').toUpperCase() === 'PAYMENT_OUT';
+      if (isOut) pOut += Number(pay.amount) || 0;
+      else pIn += Number(pay.amount) || 0;
+    });
+    return pOut - pIn;
+  };
+
   useEffect(() => {
+    setType(defaultType);
     if (defaultParty) {
       setSelectedPartyId(defaultParty.id);
-      setType(defaultParty.type === 'CUSTOMER' ? 'PAYMENT_IN' : 'PAYMENT_OUT');
-      setAmount(Math.abs(defaultParty.currentBalance));
     } else if (parties.length > 0) {
       setSelectedPartyId(parties[0].id);
-      setAmount(Math.abs(parties[0].currentBalance));
     }
-  }, [defaultParty, parties, isOpen]);
+    setAmount(0);
+    setReferenceNumber('');
+    setNotes('');
+    setDate(new Date().toISOString().split('T')[0]);
+  }, [defaultParty, defaultType, parties, isOpen]);
 
   if (!isOpen) return null;
 
@@ -80,9 +115,9 @@ export default function RecordPaymentModal({
             </div>
             <div>
               <h3 className="font-bold text-slate-800 text-sm">
-                {type === 'PAYMENT_IN' ? 'Record Payment In (Receipt)' : 'Record Payment Out (Payout)'}
+                {type === 'PAYMENT_IN' ? 'Payment In' : 'Payment Out'}
               </h3>
-              <p className="text-[10px] text-slate-500">Instant Khata ledger update &amp; receipt entry</p>
+              <p className="text-[10px] text-slate-500">Simple Payment In / Payment Out entry with date</p>
             </div>
           </div>
           <button
@@ -100,47 +135,61 @@ export default function RecordPaymentModal({
             <button
               type="button"
               onClick={() => setType('PAYMENT_IN')}
-              className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
+              className={`flex-1 py-2 rounded-lg font-bold transition-all ${
                 type === 'PAYMENT_IN' ? 'bg-white text-emerald-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              Payment In (Received)
+              Payment In
             </button>
             <button
               type="button"
               onClick={() => setType('PAYMENT_OUT')}
-              className={`flex-1 py-1.5 rounded-lg font-bold transition-all ${
+              className={`flex-1 py-2 rounded-lg font-bold transition-all ${
                 type === 'PAYMENT_OUT' ? 'bg-white text-rose-700 shadow-2xs' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              Payment Out (Paid)
+              Payment Out
             </button>
           </div>
 
           {/* Party Selector */}
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">Select Customer / Vendor *</label>
+            <label className="block font-semibold text-slate-700 mb-1">Select Party *</label>
             <select
               value={selectedPartyId}
-              onChange={(e) => {
-                setSelectedPartyId(e.target.value);
-                const p = parties.find((party) => party.id === e.target.value);
-                if (p) {
-                  setAmount(Math.abs(p.currentBalance));
-                }
-              }}
+              onChange={(e) => setSelectedPartyId(e.target.value)}
               className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
             >
-              {parties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.currentBalance >= 0 ? `Due: ${formatINR(p.currentBalance)}` : `Adv: ${formatINR(Math.abs(p.currentBalance))}`})
-                </option>
-              ))}
+              {parties.map((p) => {
+                const bal = getPartyBalance(p);
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.name} (
+                    {bal > 0
+                      ? `To Be Taken: ${formatINR(bal)}`
+                      : bal < 0
+                      ? `To Be Given: ${formatINR(Math.abs(bal))}`
+                      : 'Settled'}
+                    )
+                  </option>
+                );
+              })}
             </select>
           </div>
 
-          {/* Amount & Mode */}
+          {/* Date & Amount */}
           <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block font-semibold text-slate-700 mb-1">Date *</label>
+              <input
+                type="date"
+                required
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-[#4c3cce]"
+              />
+            </div>
+
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Amount (₹) *</label>
               <input
@@ -148,12 +197,16 @@ export default function RecordPaymentModal({
                 min="1"
                 step="0.01"
                 required
-                value={amount}
+                value={amount || ''}
                 onChange={(e) => setAmount(Number(e.target.value))}
+                placeholder="Enter amount"
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm font-black text-slate-900 focus:outline-none focus:border-[#4c3cce]"
               />
             </div>
+          </div>
 
+          {/* Payment Mode & Reference */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block font-semibold text-slate-700 mb-1">Payment Mode</label>
               <select
@@ -163,32 +216,19 @@ export default function RecordPaymentModal({
               >
                 <option value="UPI">UPI (GPay / PhonePe)</option>
                 <option value="CASH">Cash</option>
-                <option value="BANK_TRANSFER">Bank Transfer (NEFT/RTGS)</option>
+                <option value="BANK_TRANSFER">Bank Transfer</option>
                 <option value="CHEQUE">Cheque</option>
               </select>
             </div>
-          </div>
 
-          {/* Reference Number & Date */}
-          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block font-semibold text-slate-700 mb-1">Reference / UTR / Cheque #</label>
+              <label className="block font-semibold text-slate-700 mb-1">Reference / UTR #</label>
               <input
                 type="text"
                 value={referenceNumber}
                 onChange={(e) => setReferenceNumber(e.target.value)}
                 placeholder="Optional ref no."
                 className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-[#4c3cce]"
-              />
-            </div>
-
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Payment Date</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#4c3cce]"
               />
             </div>
           </div>
@@ -200,7 +240,7 @@ export default function RecordPaymentModal({
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Cleared bill invoice GB-26/101"
+              placeholder="Optional note"
               className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-[#4c3cce]"
             />
           </div>
@@ -220,7 +260,7 @@ export default function RecordPaymentModal({
                 type === 'PAYMENT_IN' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'
               }`}
             >
-              Save {type === 'PAYMENT_IN' ? 'Receipt' : 'Payment'}
+              Save {type === 'PAYMENT_IN' ? 'Payment In' : 'Payment Out'}
             </button>
           </div>
         </form>

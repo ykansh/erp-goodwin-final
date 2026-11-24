@@ -36,7 +36,7 @@ export default function InvoiceDetailModal({
   invoice,
   onEdit,
 }: InvoiceDetailModalProps) {
-  const { business, deleteInvoice, convertQuotationToInvoice, isAdmin } = useApp();
+  const { business, deleteInvoice, convertQuotationToInvoice, isAdmin, selectedCompany } = useApp();
   const [printFormat, setPrintFormat] = useState<'A4' | 'THERMAL'>('A4');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [pdfStatusMessage, setPdfStatusMessage] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export default function InvoiceDetailModal({
   const isGB2Invoice =
     invoice.companyCode === 'goodwin-2' ||
     invoice.invoiceNumber.startsWith('GB2') ||
-    invoice.taxTotal === 0;
+    selectedCompany?.code === 'goodwin-2';
   const isInterState = invoice.partyStateCode !== business.stateCode;
   const stateObj = GST_STATES.find((s) => s.code === invoice.partyStateCode);
 
@@ -119,30 +119,6 @@ export default function InvoiceDetailModal({
               <FileText size={16} className="text-[#4c3cce]" />
               <span>{invoice.invoiceNumber}</span>
             </span>
-
-            {/* Format Toggle */}
-            <div className="flex bg-slate-200/80 p-0.5 rounded-lg text-[11px] font-semibold">
-              <button
-                onClick={() => setPrintFormat('A4')}
-                className={`px-3 py-1 rounded-md transition-all ${
-                  printFormat === 'A4'
-                    ? 'bg-white text-slate-900 shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                A4 Standard
-              </button>
-              <button
-                onClick={() => setPrintFormat('THERMAL')}
-                className={`px-3 py-1 rounded-md transition-all ${
-                  printFormat === 'THERMAL'
-                    ? 'bg-white text-[#4c3cce] shadow-2xs font-bold'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                3-Inch Thermal POS
-              </button>
-            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -272,13 +248,17 @@ export default function InvoiceDetailModal({
                   />
                   <div className="min-w-0 flex-1">
                     <h1 className="text-lg sm:text-xl font-black text-slate-900 uppercase tracking-tight">
-                      Goodwin Batteries Pvt. Ltd.
+                      Goodwin Batteries
                     </h1>
                     <p className="text-[11px] text-slate-600 mt-0.5 leading-snug">
                       202, 2nd Floor – Samiksh Landmark, Near Choithram Circle, A.B. Road, Indore – 452012, Indore, Madhya Pradesh - 452012
                     </p>
                     <p className="text-[11px] text-slate-600 font-mono mt-0.5 whitespace-nowrap">
-                      <strong className="text-slate-800">GSTIN:</strong> 23AABCG1234F1Z5 |{' '}
+                      {!isGB2Invoice && (
+                        <>
+                          <strong className="text-slate-800">GSTIN:</strong> 23AABCG1234F1Z5 |{' '}
+                        </>
+                      )}
                       <strong className="text-slate-800">Phone:</strong> +91 9667724411
                     </p>
                   </div>
@@ -340,10 +320,18 @@ export default function InvoiceDetailModal({
                   <p className="text-[11px] text-slate-800">
                     <strong className="text-slate-900">Billing Name:</strong> {invoice.billingName || invoice.partyName}
                   </p>
+                  {!isGB2Invoice && (
+                    <p className="text-[11px] text-slate-800 font-mono">
+                      <strong className="text-slate-900">Customer GSTIN:</strong>{' '}
+                      <span className="font-bold text-slate-950 px-1 py-0.2 bg-slate-200/70 rounded">
+                        {invoice.partyGstin || 'Unregistered / Consumer'}
+                      </span>
+                    </p>
+                  )}
                   <p className="text-[11px] text-slate-800 font-mono">
-                    <strong className="text-slate-900">Customer GSTIN:</strong>{' '}
+                    <strong className="text-slate-900">Date:</strong>{' '}
                     <span className="font-bold text-slate-950 px-1 py-0.2 bg-slate-200/70 rounded">
-                      {invoice.partyGstin || 'URP / Not Registered'}
+                      {invoice.invoiceDate}
                     </span>
                   </p>
                   <p className="text-[11px] text-slate-800 leading-snug">
@@ -374,17 +362,19 @@ export default function InvoiceDetailModal({
                   <p className="text-[11px] text-slate-800 font-mono">
                     <strong className="text-slate-900">Transport Contact Number:</strong> {invoice.transportContactNumber || '—'}
                   </p>
-                  <p className="text-[11px] text-slate-800 font-mono">
-                    <strong className="text-slate-900">Transport GSTIN:</strong>{' '}
-                    <span className="font-bold text-slate-950 px-1 py-0.2 bg-slate-200/70 rounded">
-                      {invoice.transportGstin || '—'}
-                    </span>
-                  </p>
+                  {!isGB2Invoice && (
+                    <p className="text-[11px] text-slate-800 font-mono">
+                      <strong className="text-slate-900">Transport GSTIN:</strong>{' '}
+                      <span className="font-bold text-slate-950 px-1 py-0.2 bg-slate-200/70 rounded">
+                        {invoice.transportGstin || '—'}
+                      </span>
+                    </p>
+                  )}
                   <p className="text-[11px] text-slate-800">
                     <strong className="text-slate-900">Place of Delivery:</strong> {invoice.placeOfDelivery || 'MADHYA PRADESH'}
                   </p>
                   <p className="text-[11px] text-slate-800">
-                    <strong className="text-slate-900">Reference Name:</strong> {invoice.referenceName || '—'}
+                    <strong className="text-slate-900">Employee Name:</strong> {invoice.employeeName || invoice.referenceName || '—'}
                   </p>
                   <p className="text-[11px] text-slate-800">
                     <strong className="text-slate-900">Pvt Marka:</strong> {invoice.pvtMarka || '—'}
@@ -402,8 +392,8 @@ export default function InvoiceDetailModal({
                       <th className="py-2 px-3 w-16 text-center">HSN</th>
                       <th className="py-2 px-3 w-16 text-center">Qty</th>
                       <th className="py-2 px-3 w-20 text-right">Rate (₹)</th>
-                      <th className="py-2 px-3 w-16 text-center">GST %</th>
-                      <th className="py-2 px-3 w-24 text-right">Taxable</th>
+                      {!isGB2Invoice && <th className="py-2 px-3 w-16 text-center">GST %</th>}
+                      {!isGB2Invoice && <th className="py-2 px-3 w-24 text-right">Taxable</th>}
                       <th className="py-2 px-3 w-24 text-right">Total (₹)</th>
                     </tr>
                   </thead>
@@ -421,10 +411,14 @@ export default function InvoiceDetailModal({
                         <td className="py-2.5 px-3 text-right text-slate-700">
                           {formatINR(line.unitPrice)}
                         </td>
-                        <td className="py-2.5 px-3 text-center font-mono">{line.taxRate}%</td>
-                        <td className="py-2.5 px-3 text-right text-slate-700">
-                          {formatINR(line.unitPrice * line.quantity)}
-                        </td>
+                        {!isGB2Invoice && (
+                          <td className="py-2.5 px-3 text-center font-mono">{line.taxRate}%</td>
+                        )}
+                        {!isGB2Invoice && (
+                          <td className="py-2.5 px-3 text-right text-slate-700">
+                            {formatINR(line.unitPrice * line.quantity)}
+                          </td>
+                        )}
                         <td className="py-2.5 px-3 text-right font-bold text-slate-900">
                           {formatINR(line.total)}
                         </td>
@@ -434,31 +428,10 @@ export default function InvoiceDetailModal({
                 </table>
               </div>
 
-              {/* Bottom: Dynamic QR, Terms & Financial Totals */}
+              {/* Bottom: Terms & Financial Totals */}
               <div className="grid grid-cols-2 gap-6 pt-2">
-                {/* Left: Dynamic UPI QR & Bank Info (Only for GST invoices) */}
+                {/* Left: Terms Info */}
                 <div className="space-y-3">
-                  {!isGB2Invoice && invoice.upiQrUrl && (
-                    <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-3">
-                      <img
-                        src={invoice.upiQrUrl}
-                        alt="UPI Payment QR"
-                        className="w-20 h-20 rounded border border-slate-300"
-                      />
-                      <div>
-                        <span className="text-[10px] font-bold text-[#4c3cce] uppercase block">
-                          Instant UPI Payment
-                        </span>
-                        <p className="text-[10px] text-slate-500 leading-tight">
-                          Scan with GPay, PhonePe, or Paytm
-                        </p>
-                        <p className="text-[10px] font-mono font-bold text-slate-800 mt-1">
-                          {business.upiId}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
                   <div className="text-[10px] text-slate-500 space-y-0.5">
                     <p className="font-bold text-slate-700 uppercase">Terms &amp; Conditions:</p>
                     <p>1. Goods once sold will not be taken back without warranty card.</p>
@@ -469,13 +442,13 @@ export default function InvoiceDetailModal({
                 {/* Right: Tax Breakdown & Total */}
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-1.5 text-xs">
                   <div className="flex justify-between text-slate-600">
-                    <span>Taxable Amount:</span>
+                    <span>{isGB2Invoice ? 'Subtotal:' : 'Taxable Amount:'}</span>
                     <span className="font-semibold text-slate-800">
                       {formatINR(invoice.subtotal)}
                     </span>
                   </div>
 
-                  {!isGB2Invoice ? (
+                  {!isGB2Invoice && (
                     !isInterState ? (
                       <>
                         <div className="flex justify-between text-slate-600">
@@ -499,11 +472,6 @@ export default function InvoiceDetailModal({
                         </span>
                       </div>
                     )
-                  ) : (
-                    <div className="flex justify-between text-amber-800 font-semibold text-[11px] bg-amber-50 px-2 py-1 rounded border border-amber-200">
-                      <span>GST Tax (0%):</span>
-                      <span>Without GST Bill</span>
-                    </div>
                   )}
 
                   {invoice.roundOff !== 0 && (
@@ -570,7 +538,7 @@ export default function InvoiceDetailModal({
               <div className="pt-6 border-t border-slate-200 flex justify-between items-end text-[10px] text-slate-500">
                 <p>Generated via Goodwin Batteries Cloud ERP</p>
                 <div className="text-right">
-                  <p className="font-bold text-slate-800 mb-8">For Goodwin Batteries Pvt. Ltd.</p>
+                  <p className="font-bold text-slate-800 mb-8">For Goodwin Batteries</p>
                   <p className="border-t border-slate-400 pt-1">Authorized Signatory</p>
                 </div>
               </div>
@@ -587,9 +555,11 @@ export default function InvoiceDetailModal({
                   alt="Goodwin Batteries"
                   className="h-8 w-auto mx-auto mb-1.5 object-contain"
                 />
-                <p className="font-bold text-xs uppercase">Goodwin Batteries Pvt. Ltd.</p>
+                <p className="font-bold text-xs uppercase">Goodwin Batteries</p>
                 <p className="text-[9px]">202, 2nd Floor – Samiksh Landmark, Near Choithram Circle, A.B. Road, Indore – 452012, Indore, Madhya Pradesh - 452012</p>
-                <p className="text-[9px]">GSTIN: 23AABCG1234F1Z5 | Phone: +91 9667724411</p>
+                <p className="text-[9px]">
+                  {!isGB2Invoice ? 'GSTIN: 23AABCG1234F1Z5 | ' : ''}Phone: +91 9667724411
+                </p>
               </div>
 
               <div className="border-b border-dashed border-slate-400 pb-1 text-[10px]">
@@ -597,6 +567,7 @@ export default function InvoiceDetailModal({
                 <p>Date: {invoice.invoiceDate}</p>
                 <p>Cust: {invoice.partyName}</p>
                 <p>Phone: {invoice.partyPhone}</p>
+                {!isGB2Invoice && invoice.partyGstin && <p>GSTIN: {invoice.partyGstin}</p>}
               </div>
 
               {/* Item Lines */}
@@ -623,8 +594,12 @@ export default function InvoiceDetailModal({
 
               {/* Totals */}
               <div className="space-y-0.5 text-right text-[11px]">
-                <p>Taxable: {formatINR(invoice.subtotal)}</p>
-                <p>Total Tax: {formatINR(invoice.taxTotal)}</p>
+                {!isGB2Invoice && (
+                  <>
+                    <p>Taxable: {formatINR(invoice.subtotal)}</p>
+                    <p>Total Tax: {formatINR(invoice.taxTotal)}</p>
+                  </>
+                )}
                 <p className="font-bold text-xs pt-1 border-t border-slate-300">
                   TOTAL: {formatINR(invoice.totalAmount)}
                 </p>
@@ -633,14 +608,6 @@ export default function InvoiceDetailModal({
                   <p className="font-bold text-rose-600">Due: {formatINR(invoice.balanceAmount)}</p>
                 )}
               </div>
-
-              {/* QR Code (Only for GST invoices) */}
-              {!isGB2Invoice && invoice.upiQrUrl && (
-                <div className="flex flex-col items-center pt-2 border-t border-dashed border-slate-400">
-                  <img src={invoice.upiQrUrl} alt="UPI" className="w-24 h-24" />
-                  <p className="text-[9px] mt-1">UPI: {business.upiId}</p>
-                </div>
-              )}
 
               <p className="text-center text-[9px] pt-1">** Thank You, Visit Again! **</p>
             </div>

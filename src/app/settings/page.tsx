@@ -9,7 +9,6 @@ import AccessRestrictedCard from '@/components/AccessRestrictedCard';
 import { useApp } from '@/context/AppContext';
 import { BusinessProfile } from '@/lib/mockData';
 import { INDIAN_STATES } from '@/lib/constants';
-import { fetchEmployeesFromSupabase } from '@/lib/supabase';
 import CreateUserModal from '@/components/CreateUserModal';
 import {
   Building2,
@@ -197,20 +196,6 @@ export default function SettingsPage() {
                 <FileCheck2 size={16} />
                 <span>GST & Tax Compliance</span>
               </button>
-
-              {selectedCompany.hasOnlineStore && (
-                <button
-                  onClick={() => setActiveTab('store')}
-                  className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-bold transition-all text-left ${
-                    activeTab === 'store'
-                      ? 'bg-[#4c3cce] text-white shadow-sm'
-                      : 'text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <Store size={16} />
-                  <span>Online Digital Store</span>
-                </button>
-              )}
 
               <button
                 onClick={() => setActiveTab('staff')}
@@ -578,75 +563,6 @@ export default function SettingsPage() {
                       <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
                         Your invoices automatically map to the GSTN portal schema with CGST, SGST, IGST intra/inter-state separation and HSN code aggregations.
                       </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 4: Online Digital Store */}
-              {activeTab === 'store' && (
-                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                        Online Storefront Configuration
-                      </h2>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Customize your public digital storefront for WhatsApp direct ordering.
-                      </p>
-                    </div>
-
-                    <a
-                      href="/store"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
-                    >
-                      <ExternalLink size={14} />
-                      <span>Preview Live Store</span>
-                    </a>
-                  </div>
-
-                  <div className="space-y-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
-                        Store Tagline / Subtitle
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.storeTagline || ''}
-                        onChange={(e) => handleInputChange('storeTagline', e.target.value)}
-                        placeholder="e.g. Authorized Distributor of High-Performance Tubular & Solar Inverter Batteries"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#4c3cce]/20"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-700 block mb-1">
-                        Top Announcement Ribbon (Delivery / Offer text)
-                      </label>
-                      <input
-                        type="text"
-                        value={formData.storeNotice || ''}
-                        onChange={(e) => handleInputChange('storeNotice', e.target.value)}
-                        placeholder="e.g. ⚡ Express dispatch across Indore & MP on all battery orders!"
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-[#4c3cce]/20"
-                      />
-                    </div>
-
-                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between">
-                      <div>
-                        <p className="text-xs font-bold text-slate-800">Public Store Visibility</p>
-                        <p className="text-[11px] text-slate-500">
-                          Allow customers to browse products and place 1-click orders via WhatsApp.
-                        </p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={formData.enableOnlineStore ?? true}
-                        onChange={(e) => handleInputChange('enableOnlineStore', e.target.checked)}
-                        className="w-5 h-5 accent-[#4c3cce] rounded cursor-pointer"
-                      />
                     </div>
                   </div>
                 </div>

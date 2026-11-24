@@ -108,23 +108,27 @@ export default function InventoryPage() {
             </div>
 
             <div className="flex items-center gap-2.5">
-              <button
-                onClick={() => exportItemsToCSV(items, selectedCompany.displayName)}
-                className="h-9 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
-                title="Download inventory items spreadsheet"
-              >
-                <Download size={14} className="text-emerald-600" />
-                <span>Export CSV</span>
-              </button>
+              {isAdmin && (
+                <>
+                  <button
+                    onClick={() => exportItemsToCSV(items, selectedCompany.displayName)}
+                    className="h-9 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                    title="Download inventory items spreadsheet"
+                  >
+                    <Download size={14} className="text-emerald-600" />
+                    <span>Export CSV</span>
+                  </button>
 
-              <button
-                onClick={() => setIsImportExportOpen(true)}
-                className="h-9 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
-                title="Upload products CSV spreadsheet"
-              >
-                <Upload size={14} className="text-[#4c3cce]" />
-                <span>Import CSV</span>
-              </button>
+                  <button
+                    onClick={() => setIsImportExportOpen(true)}
+                    className="h-9 px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs flex items-center gap-1.5 shadow-2xs transition-colors"
+                    title="Upload products CSV spreadsheet"
+                  >
+                    <Upload size={14} className="text-[#4c3cce]" />
+                    <span>Import CSV</span>
+                  </button>
+                </>
+              )}
 
               <button
                 onClick={() => {
@@ -141,13 +145,17 @@ export default function InventoryPage() {
 
           {/* Metric Summary Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Total Stock Valuation (Purchase) */}
+            {/* Total Stock Valuation (Purchase) - Admin Only */}
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
               <span className="text-[11px] font-semibold text-slate-500 uppercase">
-                Stock Valuation (Cost)
+                {isAdmin ? 'Stock Valuation (Cost)' : 'Total Catalog Products'}
               </span>
-              <p className="text-xl font-black text-slate-900 mt-1">{formatINR(totalStockValue)}</p>
-              <p className="text-[10px] text-slate-400 mt-0.5">Calculated at purchase price</p>
+              <p className="text-xl font-black text-slate-900 mt-1">
+                {isAdmin ? formatINR(totalStockValue) : `${items.length} Products`}
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {isAdmin ? 'Calculated at purchase price' : 'Purchase cost restricted to Admin'}
+              </p>
             </div>
 
             {/* Total Sales Value */}
@@ -159,7 +167,9 @@ export default function InventoryPage() {
                 {formatINR(totalRetailValue)}
               </p>
               <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">
-                Profit Margin: {formatINR(totalRetailValue - totalStockValue)}
+                {isAdmin
+                  ? `Profit Margin: ${formatINR(totalRetailValue - totalStockValue)}`
+                  : 'Retail catalog value'}
               </p>
             </div>
 
@@ -314,16 +324,17 @@ export default function InventoryPage() {
                         <th className="py-3 px-3">Category</th>
                         <th className="py-3 px-3">Godown</th>
                         <th className="py-3 px-3">Current Stock</th>
-                        <th className="py-3 px-3">Purchase Rate</th>
+                        {isAdmin && <th className="py-3 px-3">Purchase Rate</th>}
                         <th className="py-3 px-3">Sales Price</th>
-                        <th className="py-3 px-3">Stock Value</th>
+                        {selectedCompany.code !== 'goodwin-2' && <th className="py-3 px-3">GST %</th>}
+                        {isAdmin && <th className="py-3 px-3">Stock Value</th>}
                         <th className="py-3 px-4 text-center">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredItems.length === 0 ? (
                         <tr>
-                          <td colSpan={9} className="py-12 text-center text-slate-400">
+                          <td colSpan={isAdmin ? 10 : 8} className="py-12 text-center text-slate-400">
                             No items found matching your filters.
                           </td>
                         </tr>
@@ -381,32 +392,45 @@ export default function InventoryPage() {
                                 </div>
                               </td>
 
-                              {/* Purchase Price */}
-                              <td className="py-3 px-3 text-slate-600 font-medium">
-                                {formatINR(item.purchasePrice)}
-                              </td>
+                              {/* Purchase Price (Admin Only) */}
+                              {isAdmin && (
+                                <td className="py-3 px-3 text-slate-600 font-medium">
+                                  {formatINR(item.purchasePrice)}
+                                </td>
+                              )}
 
                               {/* Sales Price */}
                               <td className="py-3 px-3 font-bold text-slate-900">
                                 {formatINR(item.salesPrice)}
                               </td>
 
-                              {/* Stock Value */}
-                              <td className="py-3 px-3 font-semibold text-indigo-950">
-                                {formatINR(item.stock * item.purchasePrice)}
-                              </td>
+                              {/* GST % (With GST Portal) */}
+                              {selectedCompany.code !== 'goodwin-2' && (
+                                <td className="py-3 px-3 font-mono font-bold text-[#4c3cce]">
+                                  {item.taxRate}%
+                                </td>
+                              )}
+
+                              {/* Stock Value (Admin Only) */}
+                              {isAdmin && (
+                                <td className="py-3 px-3 font-semibold text-indigo-950">
+                                  {formatINR(item.stock * item.purchasePrice)}
+                                </td>
+                              )}
 
                               {/* Action Menu */}
                               <td className="py-3 px-4 text-center">
                                 <div className="flex items-center justify-center gap-1">
-                                  {/* Quick Stock Adjustment */}
-                                  <button
-                                    onClick={() => setAdjustingItem(item)}
-                                    title="Adjust Stock"
-                                    className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-                                  >
-                                    <RefreshCw size={14} />
-                                  </button>
+                                  {/* Quick Stock Adjustment (Admin Only) */}
+                                  {isAdmin && (
+                                    <button
+                                      onClick={() => setAdjustingItem(item)}
+                                      title="Adjust Stock (Admin Only)"
+                                      className="p-1.5 rounded-lg text-slate-500 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                                    >
+                                      <RefreshCw size={14} />
+                                    </button>
+                                  )}
 
                                   {/* Print Barcode Label */}
                                   <button

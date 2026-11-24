@@ -10,135 +10,208 @@ export interface GeneratePdfOptions {
 }
 
 /**
- * Captures an HTML element and compiles it into an A4 PDF Blob & File
- * with natural blank borders (margins) on the sides, top, and bottom.
+ * Helper: Converts any modern CSS color function (oklch, oklab, lab, lch, color)
+ * into standard hex/rgba using an offscreen 2D canvas so html2canvas never crashes.
+ */
+function sanitizeModernColorsInString(cssText: string, ctx: CanvasRenderingContext2D | null): string {
+  if (!cssText || !ctx) return cssText;
+  const colorFnRegex = /(?:oklch|oklab|lch|lab|color)\([^)]+\)/gi;
+  return cssText.replace(colorFnRegex, (match) => {
+    try {
+      ctx.fillStyle = '#000000';
+      ctx.fillStyle = match;
+      return ctx.fillStyle || '#1e293b';
+    } catch {
+      return '#1e293b';
+    }
+  });
+}
+
+/**
+ * Captures ONLY the specified HTML element (isolated in an offscreen container so
+ * background pages/tables behind modals are never included) and compiles it into an A4 PDF.
  */
 export async function generateInvoicePdfBlob(
   elementId: string = 'printable-invoice',
   filename: string = 'invoice',
   options?: Partial<GeneratePdfOptions>
 ): Promise<{ blob: Blob; file: File }> {
-  const element = document.getElementById(elementId);
-  if (!element) {
-    throw new Error(`Invoice element with id "${elementId}" not found in DOM.`);
+  const sourceElement = document.getElementById(elementId);
+  if (!sourceElement) {
+    throw new Error(`Printable element with id "${elementId}" not found in DOM.`);
   }
 
-  // Render element to high-res canvas (scale: 2 for sharp 300dpi-equivalent print output)
-  const canvas = await html2canvas(element, {
-    scale: 2,
-    useCORS: true,
-    logging: false,
-    backgroundColor: '#ffffff',
-    windowWidth: 1024,
-    onclone: (clonedDoc) => {
-      const clonedEl = clonedDoc.getElementById(elementId);
-      if (clonedEl) {
-        // Strip drop shadows so edges stay clean and sharp without blurry shadow artifacts
-        clonedEl.style.boxShadow = 'none';
-      }
-    },
-  });
+  const helperCanvas = document.createElement('canvas');
+  helperCanvas.width = 1;
+  helperCanvas.height = 1;
+  const helperCtx = helperCanvas.getContext('2d');
 
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
+  // Create an isolated offscreen container so html2canvas measures and renders ONLY this element
+  // (never capturing the background page behind a fixed modal)
+  const tempWrapper = document.createElement('div');
+  tempWrapper.id = '__pdf_isolated_wrapper__';
+  tempWrapper.style.position = 'fixed';
+  tempWrapper.style.left = '-10000px';
+  tempWrapper.style.top = '0';
+  tempWrapper.style.width = '800px';
+  tempWrapper.style.backgroundColor = '#ffffff';
+  tempWrapper.style.zIndex = '-9999';
+  tempWrapper.style.overflow = 'visible';
 
-  const pdfWidth = 210; // A4 width in mm
-  const pdfHeight = 297; // A4 height in mm
+  const isolatedClone = sourceElement.cloneNode(true) as HTMLElement;
+  isolatedClone.id = `${elementId}-isolated-clone`;
+  isolatedClone.style.width = '800px';
+  isolatedClone.style.maxWidth = '800px';
+  isolatedClone.style.maxHeight = 'none';
+  isolatedClone.style.height = 'auto';
+  isolatedClone.style.overflow = 'visible';
+  isolatedClone.style.boxShadow = 'none';
+  isolatedClone.style.margin = '0';
 
-  // Check if printing thermal receipt (narrow POS layout) or standard A4 invoice
-  const isThermalReceipt = element.offsetWidth < 500;
+  // Remove any .no-print elements inside the clone
+  isolatedClone.querySelectorAll('.no-print').forEach((np) => np.remove());
 
-  // Natural blank borders (margins) on sides and top/bottom
-  // Standard A4 invoice: 12mm blank borders on sides (~0.47 in), 10mm top & bottom
-  const marginX = options?.marginSideMm ?? (isThermalReceipt ? (pdfWidth - 80) / 2 : 12);
-  const marginY = options?.marginTopMm ?? 10;
-  const marginBottom = options?.marginBottomMm ?? 10;
+  tempWrapper.appendChild(isolatedClone);
+  document.body.appendChild(tempWrapper);
 
-  const contentWidth = isThermalReceipt ? 80 : pdfWidth - marginX * 2;
-  const contentHeight = pdfHeight - marginY - marginBottom;
+  try {
+    const canvas = await html2canvas(isolatedClone, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      width: 800,
+      windowWidth: 1024,
+      onclone: (clonedDoc) => {
+        // 1. Sanitize all <style> tags in clonedDoc so html2canvas never encounters oklch/oklab
+        const styleTags = clonedDoc.querySelectorAll('style');
+        styleTags.forEach((styleEl) => {
+          if (styleEl.textContent) {
+            styleEl.textContent = sanitizeModernColorsInString(styleEl.textContent, helperCtx);
+          }
+        });
 
-  // Calculate full scaled height in mm
-  const totalImgHeightMm = (canvas.height * contentWidth) / canvas.width;
+        // 2. Inline and sanitize accessible rules from <link rel="stylesheet"> tags
+        const linkTags = Array.from(clonedDoc.querySelectorAll('link[rel="stylesheet"]'));
+        linkTags.forEach((linkEl) => {
+          try {
+            const matchingSheet = Array.from(document.styleSheets).find(
+              (s) => s.href && s.href === (linkEl as HTMLLinkElement).href
+            );
+            if (matchingSheet && matchingSheet.cssRules) {
+              const rawCss = Array.from(matchingSheet.cssRules)
+                .map((r) => r.cssText)
+                .join('\n');
+              const newStyle = clonedDoc.createElement('style');
+              newStyle.textContent = sanitizeModernColorsInString(rawCss, helperCtx);
+              linkEl.parentNode?.insertBefore(newStyle, linkEl);
+              linkEl.remove();
+            }
+          } catch {
+            // Cross-origin stylesheet; leave as-is
+          }
+        });
+      },
+    });
 
-  if (totalImgHeightMm <= contentHeight) {
-    // Single page invoice - render directly with natural blank borders
-    const imgData = canvas.toDataURL('image/jpeg', 0.98);
-    pdf.addImage(
-      imgData,
-      'JPEG',
-      marginX,
-      marginY,
-      contentWidth,
-      totalImgHeightMm,
-      undefined,
-      'FAST'
-    );
-  } else {
-    // Multi-page invoice - slice canvas cleanly page-by-page preserving margins
-    const pxPerMm = canvas.width / contentWidth;
-    const pagePxHeight = contentHeight * pxPerMm;
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
+    });
 
-    let sourceY = 0;
-    let pageIndex = 0;
+    const pdfWidth = 210; // A4 width in mm
+    const pdfHeight = 297; // A4 height in mm
 
-    while (sourceY < canvas.height) {
-      const chunkPxHeight = Math.min(pagePxHeight, canvas.height - sourceY);
+    const marginX = options?.marginSideMm ?? 12;
+    const marginY = options?.marginTopMm ?? 10;
+    const marginBottom = options?.marginBottomMm ?? 10;
 
-      const pageCanvas = document.createElement('canvas');
-      pageCanvas.width = canvas.width;
-      pageCanvas.height = chunkPxHeight;
-      const ctx = pageCanvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-        ctx.drawImage(
-          canvas,
-          0,
-          sourceY,
-          canvas.width,
-          chunkPxHeight,
-          0,
-          0,
-          canvas.width,
-          chunkPxHeight
-        );
-      }
+    const contentWidth = pdfWidth - marginX * 2;
+    const contentHeight = pdfHeight - marginY - marginBottom;
 
-      const chunkMmHeight = (chunkPxHeight * contentWidth) / canvas.width;
-      const chunkData = pageCanvas.toDataURL('image/jpeg', 0.98);
+    const totalImgHeightMm = (canvas.height * contentWidth) / canvas.width;
 
-      if (pageIndex > 0) {
-        pdf.addPage();
-      }
-
+    if (totalImgHeightMm <= contentHeight) {
+      const imgData = canvas.toDataURL('image/jpeg', 0.98);
       pdf.addImage(
-        chunkData,
+        imgData,
         'JPEG',
         marginX,
         marginY,
         contentWidth,
-        chunkMmHeight,
+        totalImgHeightMm,
         undefined,
         'FAST'
       );
+    } else {
+      const pxPerMm = canvas.width / contentWidth;
+      const pagePxHeight = contentHeight * pxPerMm;
 
-      sourceY += chunkPxHeight;
-      pageIndex++;
+      let sourceY = 0;
+      let pageIndex = 0;
+
+      while (sourceY < canvas.height) {
+        const chunkPxHeight = Math.min(pagePxHeight, canvas.height - sourceY);
+
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = chunkPxHeight;
+        const ctx = pageCanvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+          ctx.drawImage(
+            canvas,
+            0,
+            sourceY,
+            canvas.width,
+            chunkPxHeight,
+            0,
+            0,
+            canvas.width,
+            chunkPxHeight
+          );
+        }
+
+        const chunkMmHeight = (chunkPxHeight * contentWidth) / canvas.width;
+        const chunkData = pageCanvas.toDataURL('image/jpeg', 0.98);
+
+        if (pageIndex > 0) {
+          pdf.addPage();
+        }
+
+        pdf.addImage(
+          chunkData,
+          'JPEG',
+          marginX,
+          marginY,
+          contentWidth,
+          chunkMmHeight,
+          undefined,
+          'FAST'
+        );
+
+        sourceY += chunkPxHeight;
+        pageIndex++;
+      }
+    }
+
+    const cleanFilename = filename.toLowerCase().endsWith('.pdf') ? filename : `${filename}.pdf`;
+    const blob = pdf.output('blob');
+    const file = new File([blob], cleanFilename, { type: 'application/pdf' });
+
+    return { blob, file };
+  } finally {
+    if (tempWrapper.parentNode) {
+      tempWrapper.parentNode.removeChild(tempWrapper);
     }
   }
-
-  const cleanFilename = filename.toLowerCase().endsWith('.pdf') ? filename : `${filename}.pdf`;
-  const blob = pdf.output('blob');
-  const file = new File([blob], cleanFilename, { type: 'application/pdf' });
-
-  return { blob, file };
 }
 
 /**
- * Directly downloads the rendered invoice as a PDF file to the user's computer.
+ * Directly downloads the rendered document as a PDF file to the user's computer.
  */
 export async function downloadInvoicePdf(
   elementId: string = 'printable-invoice',
@@ -169,8 +242,6 @@ export interface ShareInvoiceOptions {
 
 /**
  * Shares invoice via Web Share API with attached PDF file.
- * If file sharing is not supported by the client browser (e.g. desktop WhatsApp Web),
- * it downloads the PDF automatically and opens WhatsApp with the customer's phone number and message.
  */
 export async function shareInvoicePdfWithWhatsApp({
   elementId = 'printable-invoice',
@@ -178,8 +249,7 @@ export async function shareInvoicePdfWithWhatsApp({
   partyName,
   partyPhone,
   totalAmount,
-  businessName = 'Goodwin Batteries Pvt. Ltd.',
-  upiId = 'goodwin@okaxis',
+  businessName = 'Goodwin Batteries',
   marginSideMm,
 }: ShareInvoiceOptions): Promise<{ sharedVia: 'native-share' | 'whatsapp-with-download' }> {
   const filename = `${invoiceNumber}.pdf`;
@@ -189,14 +259,12 @@ export async function shareInvoicePdfWithWhatsApp({
     maximumFractionDigits: 2,
   }).format(totalAmount);
 
-  // Generate the PDF with natural blank borders
   const { file, blob } = await generateInvoicePdfBlob(elementId, filename, {
     marginSideMm,
   });
 
-  const shareText = `Dear ${partyName},\n\nPlease find attached your invoice *${invoiceNumber}* for *${formattedAmount}* from ${businessName}.\n\nPay via UPI: ${upiId}\n\nThank you for choosing Goodwin Batteries!`;
+  const shareText = `Dear ${partyName},\n\nPlease find attached your invoice *${invoiceNumber}* for *${formattedAmount}* from ${businessName}.\n\nThank you for choosing Goodwin Batteries!`;
 
-  // 1. Check if the device / browser supports navigator.canShare with files (Mobile devices, iOS Safari, macOS Safari, Android Chrome)
   if (typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({
@@ -207,16 +275,12 @@ export async function shareInvoicePdfWithWhatsApp({
       return { sharedVia: 'native-share' };
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        // User cancelled share dialog
         return { sharedVia: 'native-share' };
       }
       console.warn('Native share failed, falling back to download + WhatsApp:', err);
     }
   }
 
-  // 2. Desktop WhatsApp / WhatsApp Web fallback:
-  // Browsers cannot programmatically inject files into external third-party web apps (wa.me) due to browser sandbox security.
-  // So we automatically download the PDF directly onto the user's computer/phone AND open WhatsApp with the personalized message.
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

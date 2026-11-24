@@ -27,6 +27,7 @@ import {
   fetchPaymentsFromSupabase,
   insertPaymentToSupabase,
   fetchCompanyFromSupabase,
+  clearHrmsEmployeesInSupabase,
   supabase,
 } from '@/lib/supabase';
 import {
@@ -126,6 +127,14 @@ interface AppContextType {
 
   // Real User Authentication & Staff Management
   systemUsers: AppUserRecord[];
+  employees: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    role: string;
+    designation?: string;
+  }[];
   refreshSystemUsers: () => Promise<void>;
   createSystemUser: (params: {
     name: string;
@@ -296,6 +305,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch {}
     setSimulatedRole(null);
     if (typeof window !== 'undefined') {
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = '/login';
     }
   }, []);
@@ -305,6 +315,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSystemUsers = useCallback(async () => {
     try {
+      // Purge any residual dummy HRMS records from Supabase
+      clearHrmsEmployeesInSupabase().catch(() => {});
       const list = await fetchAllUsers();
       setSystemUsers(list);
     } catch (err) {
@@ -388,8 +400,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         fetchPaymentsFromSupabase(company.code),
       ]);
 
+      // Automatically ensure any customer present on an invoice is also in Parties Khata
+      const mergedParties = [...fetchedParties];
+      const existingNames = new Set(fetchedParties.map((p) => p.name.trim().toLowerCase()));
+      for (const inv of fetchedInvoices) {
+        const cleanName = (inv.partyName || '').trim();
+        if (
+          cleanName &&
+          cleanName.toLowerCase() !== 'cash customer' &&
+          cleanName.toLowerCase() !== 'cash sale' &&
+          !existingNames.has(cleanName.toLowerCase())
+        ) {
+          existingNames.add(cleanName.toLowerCase());
+          const newPartyData: Omit<MockParty, 'id'> = {
+            type: 'CUSTOMER',
+            name: cleanName,
+            phone: inv.partyPhone || '',
+            email: '',
+            gstin: inv.partyGstin || '',
+            state: inv.billingState || 'Madhya Pradesh',
+            stateCode: inv.partyStateCode || '23',
+            address: inv.billingAddress || '',
+            creditLimit: 0,
+            currentBalance: 0,
+            createdAt: inv.invoiceDate || new Date().toISOString().split('T')[0],
+          };
+          const created = await insertCustomerToSupabase(newPartyData, company.code);
+          mergedParties.push(
+            created || {
+              ...newPartyData,
+              id: `party-auto-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            }
+          );
+        }
+      }
+
       setItems(fetchedItems);
-      setParties(fetchedParties);
+      setParties(mergedParties);
       setInvoices(fetchedInvoices);
       setPayments(fetchedPayments);
       setCashInHand(activeComp.cashBalance);
@@ -520,6 +567,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ),
     ]);
 
+    // Ensure customer exists in Party Khata automatically (if not already present)
+    let matchingParty = parties.find(
+      (p) =>
+        p.name.toLowerCase() === finalInvoice.partyName.toLowerCase() ||
+        (finalInvoice.partyPhone && p.phone === finalInvoice.partyPhone)
+    );
+    if (!matchingParty && finalInvoice.partyName.trim()) {
+      matchingParty = await addParty({
+        type: 'CUSTOMER',
+        name: finalInvoice.partyName.trim(),
+        phone: finalInvoice.partyPhone || '',
+        email: '',
+        gstin: finalInvoice.partyGstin || '',
+        state: finalInvoice.billingState || 'Madhya Pradesh',
+        stateCode: finalInvoice.partyStateCode || '23',
+        address: finalInvoice.billingAddress || '',
+        creditLimit: 0,
+        currentBalance: 0,
+        createdAt: finalInvoice.invoiceDate,
+      });
+    }
+
     // If it's a Quotation, it is just an estimate - do not deduct inventory, balance, or cash
     if (finalInvoice.invoiceType === 'QUOTATION') {
       return finalInvoice;
@@ -538,9 +607,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Record a PAYMENT_IN receipt into payments list and Supabase
-      const matchingParty = parties.find(
-        (p) => p.name.toLowerCase() === finalInvoice.partyName.toLowerCase()
-      );
       if (matchingParty) {
         const receiptPayment: Omit<PaymentRecord, 'id'> = {
           partyId: matchingParty.id,
@@ -664,9 +730,26 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      const matchingParty = parties.find(
-        (p) => p.name.toLowerCase() === converted.partyName.toLowerCase()
+      let matchingParty = parties.find(
+        (p) =>
+          p.name.toLowerCase() === converted.partyName.toLowerCase() ||
+          (converted.partyPhone && p.phone === converted.partyPhone)
       );
+      if (!matchingParty && converted.partyName.trim()) {
+        matchingParty = await addParty({
+          type: 'CUSTOMER',
+          name: converted.partyName.trim(),
+          phone: converted.partyPhone || '',
+          email: '',
+          gstin: converted.partyGstin || '',
+          state: converted.billingState || 'Madhya Pradesh',
+          stateCode: converted.partyStateCode || '23',
+          address: converted.billingAddress || '',
+          creditLimit: 0,
+          currentBalance: 0,
+          createdAt: converted.invoiceDate,
+        });
+      }
       if (matchingParty) {
         const receiptPayment: Omit<PaymentRecord, 'id'> = {
           partyId: matchingParty.id,
@@ -703,15 +786,62 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return converted;
   };
 
-  // Update Invoice (Syncs to Supabase)
+  // Update Invoice (Syncs to Supabase in-place without duplicating)
   const updateInvoice = async (invoice: MockInvoice): Promise<MockInvoice> => {
-    const prevInvoice = invoices.find((inv) => inv.id === invoice.id);
+    const prevInvoice = invoices.find(
+      (inv) => inv.id === invoice.id || inv.invoiceNumber === invoice.invoiceNumber
+    );
+    const resolvedId = prevInvoice ? prevInvoice.id : invoice.id;
+    const updatedInvoice: MockInvoice = { ...invoice, id: resolvedId };
 
-    // Update local state
-    setInvoices((prev) => prev.map((inv) => (inv.id === invoice.id ? invoice : inv)));
+    // Update local state in-place (deduplicating any matching id or invoiceNumber)
+    setInvoices((prev) =>
+      prev.map((inv) =>
+        inv.id === resolvedId || inv.invoiceNumber === updatedInvoice.invoiceNumber
+          ? updatedInvoice
+          : inv
+      )
+    );
 
     // Sync to Supabase
-    await updateInvoiceInSupabase(invoice.id, invoice, selectedCompany.code);
+    await updateInvoiceInSupabase(resolvedId, updatedInvoice, selectedCompany.code);
+
+    // Sync linked auto-receipt in payments list if paidAmount changed
+    const invRef = `INV-${updatedInvoice.invoiceNumber}`;
+    if (updatedInvoice.paidAmount <= 0) {
+      setPayments((prev) => prev.filter((p) => p.referenceNumber !== invRef));
+    } else {
+      setPayments((prev) =>
+        prev.map((p) =>
+          p.referenceNumber === invRef ? { ...p, amount: updatedInvoice.paidAmount } : p
+        )
+      );
+    }
+
+    // Ensure customer exists in Party Khata if updated to a new customer name
+    const cleanName = (invoice.partyName || '').trim();
+    if (cleanName) {
+      const exists = parties.some(
+        (p) =>
+          p.name.trim().toLowerCase() === cleanName.toLowerCase() ||
+          (invoice.partyPhone && p.phone === invoice.partyPhone)
+      );
+      if (!exists) {
+        await addParty({
+          type: 'CUSTOMER',
+          name: cleanName,
+          phone: invoice.partyPhone || '',
+          email: '',
+          gstin: invoice.partyGstin || '',
+          state: invoice.billingState || 'Madhya Pradesh',
+          stateCode: invoice.partyStateCode || '23',
+          address: invoice.billingAddress || '',
+          creditLimit: 0,
+          currentBalance: 0,
+          createdAt: invoice.invoiceDate,
+        });
+      }
+    }
 
     // If balance changed on a confirmed invoice, adjust customer balance
     if (invoice.invoiceType !== 'QUOTATION' && prevInvoice) {
@@ -733,10 +863,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return invoice;
   };
 
-  // Delete Invoice (Syncs to Supabase)
+  // Delete Invoice (Syncs to Supabase and removes linked receipts)
   const deleteInvoice = async (id: string) => {
-    setInvoices((prev) => prev.filter((inv) => inv.id !== id));
-    await deleteInvoiceInSupabase(id);
+    const target = invoices.find((inv) => inv.id === id || inv.invoiceNumber === id);
+    const invNumber = target?.invoiceNumber;
+
+    setInvoices((prev) => prev.filter((inv) => inv.id !== id && inv.invoiceNumber !== id));
+    if (invNumber) {
+      const invRef = `INV-${invNumber}`;
+      setPayments((prev) =>
+        prev.filter((p) => p.referenceNumber !== invRef && p.referenceNumber !== invNumber)
+      );
+    }
+    await deleteInvoiceInSupabase(id, invNumber);
   };
 
   // Record Payment (Syncs to Supabase)
@@ -855,6 +994,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       .then();
   };
 
+  // Registered employees list strictly sourced from active systemUsers in Staff & RBAC
+  const employees = React.useMemo(() => {
+    return systemUsers
+      .filter((u) => u.is_active !== false)
+      .map((u) => ({
+        id: u.id,
+        name: u.name.trim(),
+        email: u.email,
+        phone: u.phone,
+        role: u.role,
+        designation: u.designation || (u.role === 'ADMIN' ? 'Administrator' : 'Sales & Billing Executive'),
+      }));
+  }, [systemUsers]);
+
   return (
     <AppContext.Provider
       value={{
@@ -869,6 +1022,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         loginUser,
         logoutUser,
         systemUsers,
+        employees,
         refreshSystemUsers,
         createSystemUser,
         loginWithCredentials,

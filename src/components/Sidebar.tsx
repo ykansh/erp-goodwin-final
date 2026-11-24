@@ -21,6 +21,7 @@ import {
   Cloud,
   Layers,
   Lock,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/context/AppContext';
@@ -48,17 +49,9 @@ export default function Sidebar({ onOpenQuickBill }: SidebarProps) {
   }, []);
 
   // Filter navigation items based on company feature flags & RBAC locks
-  // Goodwin Batteries 2 has: POS quick bill removed, GST reports removed, Online store removed
   const navItems = [
     { label: 'Dashboard', href: '/', icon: LayoutDashboard, enabled: true },
     { label: 'Sales Invoices', href: '/sales', icon: Receipt, enabled: true },
-    {
-      label: 'POS Quick Bill',
-      href: '/pos',
-      icon: ScanBarcode,
-      badge: '5s Bill',
-      enabled: selectedCompany.hasPos,
-    },
     { label: 'Items & Stock', href: '/inventory', icon: Package, enabled: true },
     { label: 'Parties (Khata)', href: '/parties', icon: Users, enabled: true },
     {
@@ -76,18 +69,17 @@ export default function Sidebar({ onOpenQuickBill }: SidebarProps) {
       locked: isEmployee,
     },
     {
-      label: 'Online Store',
-      href: '/store',
-      icon: Store,
-      badge: 'Live',
-      enabled: selectedCompany.hasOnlineStore,
-    },
-    {
       label: 'Settings',
       href: '/settings',
       icon: Settings,
       enabled: true,
       locked: isEmployee,
+    },
+    {
+      label: 'Employee SOP',
+      href: '/sop',
+      icon: BookOpen,
+      enabled: true,
     },
   ].filter((item) => item.enabled);
 
@@ -99,19 +91,10 @@ export default function Sidebar({ onOpenQuickBill }: SidebarProps) {
         <div className="h-16 border-b border-slate-200 px-4 flex items-center justify-between bg-slate-50/50">
           <div className="flex items-center gap-2.5">
             <img
-              src="/goodwin-icon.svg"
+              src="/goodwin-logo.svg"
               alt="Goodwin Batteries"
-              className="w-9 h-9 object-contain shrink-0 drop-shadow-xs"
+              className="h-11 w-auto object-contain shrink-0 drop-shadow-xs"
             />
-            <div>
-              <span className="font-extrabold text-slate-800 text-base tracking-tight flex items-center gap-0.5">
-                Goodwin<span className="text-[#2ea129]">Batteries</span>
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium block -mt-1 tracking-wider uppercase flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                Cloud ERP
-              </span>
-            </div>
           </div>
         </div>
 
@@ -246,11 +229,6 @@ export default function Sidebar({ onOpenQuickBill }: SidebarProps) {
                                 GST Reports
                               </span>
                             )}
-                            {company.hasOnlineStore && (
-                              <span className="text-[9px] px-1 py-0.2 rounded bg-slate-100 text-slate-600 font-medium">
-                                Store
-                              </span>
-                            )}
                             {!company.hasPos && !company.hasGstReports && (
                               <span className="text-[9px] px-1 py-0.2 rounded bg-amber-50 text-amber-700 font-medium border border-amber-100">
                                 Invoices &amp; Stock
@@ -323,17 +301,6 @@ export default function Sidebar({ onOpenQuickBill }: SidebarProps) {
                   <span className="text-[10px] px-1.5 py-0.5 rounded-md font-bold bg-slate-100 text-slate-400 flex items-center gap-1">
                     <Lock size={10} />
                     <span>Admin</span>
-                  </span>
-                ) : item.badge ? (
-                  <span
-                    className={cn(
-                      'text-[10px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wider',
-                      item.badge === '5s Bill'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-emerald-100 text-emerald-800'
-                    )}
-                  >
-                    {item.badge}
                   </span>
                 ) : null}
               </Link>

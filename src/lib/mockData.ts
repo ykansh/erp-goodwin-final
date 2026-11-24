@@ -52,6 +52,7 @@ export interface MockParty {
   address: string;
   creditLimit: number;
   currentBalance: number; // Positive = Receivable (Dr), Negative = Payable (Cr)
+  createdAt?: string;
 }
 
 export interface MockInvoiceItem {
@@ -90,6 +91,7 @@ export interface MockInvoice {
   placeOfSupply?: string;
   placeOfDelivery?: string;
   referenceName?: string;
+  employeeName?: string;
   pvtMarka?: string;
   partyStateCode: string;
   invoiceDate: string;
@@ -114,7 +116,7 @@ export interface MockInvoice {
 
 // Initial Clean Default Business Profile (Real Goodwin Data - No Dummies)
 export const INITIAL_BUSINESS: BusinessProfile = {
-  businessName: 'Goodwin Batteries Pvt. Ltd.',
+  businessName: 'Goodwin Batteries',
   gstin: '23AABCG1234F1Z5',
   phone: '+91 9667724411',
   email: 'info@goodwinbatteries.com',
