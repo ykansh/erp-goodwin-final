@@ -16,6 +16,7 @@ import {
   Truck,
   Edit,
   Loader2,
+  Repeat,
 } from 'lucide-react';
 import { MockInvoice } from '@/lib/mockData';
 import { useApp } from '@/context/AppContext';
@@ -28,6 +29,7 @@ interface InvoiceDetailModalProps {
   onClose: () => void;
   invoice: MockInvoice | null;
   onEdit?: (invoice: MockInvoice) => void;
+  onRepeat?: (invoice: MockInvoice) => void;
 }
 
 export default function InvoiceDetailModal({
@@ -35,6 +37,7 @@ export default function InvoiceDetailModal({
   onClose,
   invoice,
   onEdit,
+  onRepeat,
 }: InvoiceDetailModalProps) {
   const { business, deleteInvoice, convertQuotationToInvoice, isAdmin, selectedCompany } = useApp();
   const [printFormat, setPrintFormat] = useState<'A4' | 'THERMAL'>('A4');
@@ -153,6 +156,20 @@ export default function InvoiceDetailModal({
               >
                 <Edit size={13} className="text-amber-600" />
                 <span>Edit</span>
+              </button>
+            )}
+
+            {onRepeat && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onRepeat(invoice);
+                }}
+                className="h-8 px-3 rounded-lg border border-purple-200 bg-purple-50 hover:bg-purple-100 text-purple-700 font-semibold flex items-center gap-1.5 transition-colors"
+                title="Repeat / Duplicate this order for this customer"
+              >
+                <Repeat size={13} className="text-purple-600" />
+                <span>Repeat Order</span>
               </button>
             )}
 

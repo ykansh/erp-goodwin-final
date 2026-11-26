@@ -432,6 +432,17 @@ export default function EmployeeSopPage() {
                     <span className="text-red-700 font-bold">RED (&quot;Money To Be Taken&quot;)</span>.
                   </p>
                 </div>
+
+                {/* Repeat Order Pro-Tip */}
+                <div className="p-4 rounded-2xl bg-purple-50 border border-purple-200 text-xs text-purple-900 space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold text-purple-950">
+                    <Sparkles size={16} className="text-purple-600" />
+                    <span>Pro-Tip: 1-Click &quot;Repeat Order&quot; Feature</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    When an existing customer comes back to purchase the same battery or re-order regular stock, do not re-enter everything from scratch. In the <strong>Sales Invoices</strong> or <strong>Recent Invoices</strong> table, click the <strong>Repeat (🔁)</strong> icon under the Actions column. The system immediately pre-fills the bill with identical items, rates, and customer details with a fresh invoice number.
+                  </p>
+                </div>
               </div>
 
               {/* SECTION 4: QUOTATION LIFECYCLE */}

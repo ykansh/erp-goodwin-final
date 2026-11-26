@@ -29,6 +29,7 @@ import {
   Edit,
   UserPlus,
   Shield,
+  Repeat,
 } from 'lucide-react';
 
 export default function SalesPage() {
@@ -85,7 +86,15 @@ export default function SalesPage() {
   const [billingModalType, setBillingModalType] = useState<'TAX_INVOICE' | 'QUOTATION'>('TAX_INVOICE');
   const [viewingInvoice, setViewingInvoice] = useState<MockInvoice | null>(null);
   const [editingInvoice, setEditingInvoice] = useState<MockInvoice | null>(null);
+  const [repeatInvoice, setRepeatInvoice] = useState<MockInvoice | null>(null);
   const [isCreateEmployeeModalOpen, setIsCreateEmployeeModalOpen] = useState(false);
+
+  const handleRepeatInvoice = (inv: MockInvoice) => {
+    setViewingInvoice(null);
+    setEditingInvoice(null);
+    setRepeatInvoice(inv);
+    setIsBillingModalOpen(true);
+  };
 
   const getInvoiceEmployeeName = (inv: MockInvoice) =>
     (inv.employeeName || inv.referenceName || 'Ansh Chourasiya').trim();
@@ -592,12 +601,22 @@ export default function SalesPage() {
                             <button
                               onClick={() => {
                                 setEditingInvoice(inv);
+                                setRepeatInvoice(null);
                                 setIsBillingModalOpen(true);
                               }}
                               title="Edit Invoice"
                               className="p-1.5 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition-colors"
                             >
                               <Edit size={15} />
+                            </button>
+
+                            {/* Repeat Order */}
+                            <button
+                              onClick={() => handleRepeatInvoice(inv)}
+                              title="Repeat Order (New bill with same party & items)"
+                              className="p-1.5 rounded-lg text-slate-600 hover:text-purple-700 hover:bg-purple-50 transition-colors"
+                            >
+                              <Repeat size={15} />
                             </button>
 
                             {/* WhatsApp Share with PDF */}
@@ -655,7 +674,11 @@ export default function SalesPage() {
         onEdit={(inv) => {
           setViewingInvoice(null);
           setEditingInvoice(inv);
+          setRepeatInvoice(null);
           setIsBillingModalOpen(true);
+        }}
+        onRepeat={(inv) => {
+          handleRepeatInvoice(inv);
         }}
       />
 
@@ -664,12 +687,15 @@ export default function SalesPage() {
         onClose={() => {
           setIsBillingModalOpen(false);
           setEditingInvoice(null);
+          setRepeatInvoice(null);
         }}
         initialType={billingModalType}
         editingInvoice={editingInvoice}
+        repeatInvoice={repeatInvoice}
         onInvoiceCreated={(newInv) => {
           setViewingInvoice(newInv);
           setEditingInvoice(null);
+          setRepeatInvoice(null);
         }}
       />
 

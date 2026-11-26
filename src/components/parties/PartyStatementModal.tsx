@@ -10,8 +10,9 @@ import {
   Download,
   Loader2,
   CheckCircle2,
+  Repeat,
 } from 'lucide-react';
-import { MockParty } from '@/lib/mockData';
+import { MockParty, MockInvoice } from '@/lib/mockData';
 import { useApp } from '@/context/AppContext';
 import { formatINR } from '@/lib/utils';
 import { downloadInvoicePdf } from '@/lib/pdfUtils';
@@ -21,6 +22,7 @@ interface PartyStatementModalProps {
   onClose: () => void;
   party: MockParty | null;
   onRecordPayment: (party: MockParty) => void;
+  onRepeatOrder?: (invoice: MockInvoice) => void;
   autoDownloadPdf?: boolean;
   onAutoDownloadComplete?: () => void;
 }
@@ -30,6 +32,7 @@ export default function PartyStatementModal({
   onClose,
   party,
   onRecordPayment,
+  onRepeatOrder,
   autoDownloadPdf = false,
   onAutoDownloadComplete,
 }: PartyStatementModalProps) {
@@ -220,6 +223,20 @@ export default function PartyStatementModal({
               <PlusCircle size={14} />
               <span>Payment In / Out</span>
             </button>
+
+            {onRepeatOrder && partyInvoices.length > 0 && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onRepeatOrder(partyInvoices[0]);
+                }}
+                className="px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs flex items-center gap-1.5 border border-purple-200 transition-colors"
+                title={`Repeat order from latest bill #${partyInvoices[0].invoiceNumber}`}
+              >
+                <Repeat size={14} className="text-purple-600" />
+                <span>Repeat Last Order</span>
+              </button>
+            )}
 
             <button
               onClick={() => window.print()}

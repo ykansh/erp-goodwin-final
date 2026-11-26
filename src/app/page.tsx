@@ -38,8 +38,10 @@ import {
   CheckCircle2,
   XCircle,
   Calendar,
+  Repeat,
 } from 'lucide-react';
 import { useApp } from '@/context/AppContext';
+import { MockInvoice } from '@/lib/mockData';
 import { formatINR } from '@/lib/utils';
 
 export default function DashboardPage() {
@@ -63,6 +65,7 @@ export default function DashboardPage() {
 
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
   const [billingModalType, setBillingModalType] = useState<'TAX_INVOICE' | 'QUOTATION'>('TAX_INVOICE');
+  const [repeatInvoice, setRepeatInvoice] = useState<MockInvoice | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isImportExportModalOpen, setIsImportExportModalOpen] = useState(false);
   const [isCreateEmployeeModalOpen, setIsCreateEmployeeModalOpen] = useState(false);
@@ -934,6 +937,16 @@ export default function DashboardPage() {
                           <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center justify-center gap-2">
                               <button
+                                onClick={() => {
+                                  setRepeatInvoice(inv);
+                                  setIsBillingModalOpen(true);
+                                }}
+                                title="Repeat Order (New bill with same party & items)"
+                                className="p-1 rounded-md text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"
+                              >
+                                <Repeat size={15} />
+                              </button>
+                              <button
                                 onClick={() => window.print()}
                                 title="Print Invoice"
                                 className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors"
@@ -1129,8 +1142,12 @@ export default function DashboardPage() {
       {/* 8-Second Fast GST Billing Modal */}
       <CreateInvoiceModal
         isOpen={isBillingModalOpen}
-        onClose={() => setIsBillingModalOpen(false)}
+        onClose={() => {
+          setIsBillingModalOpen(false);
+          setRepeatInvoice(null);
+        }}
         initialType={billingModalType}
+        repeatInvoice={repeatInvoice}
       />
 
       {/* Add Item Modal */}

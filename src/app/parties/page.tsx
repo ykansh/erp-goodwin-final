@@ -9,7 +9,7 @@ import PartyStatementModal from '@/components/parties/PartyStatementModal';
 import CreateInvoiceModal from '@/components/CreateInvoiceModal';
 import ImportExportModal from '@/components/ImportExportModal';
 import { useApp } from '@/context/AppContext';
-import { MockParty } from '@/lib/mockData';
+import { MockParty, MockInvoice } from '@/lib/mockData';
 import { formatINR } from '@/lib/utils';
 import { exportPartiesToCSV } from '@/lib/csvUtils';
 import {
@@ -48,6 +48,7 @@ export default function PartiesPage() {
   const [statementParty, setStatementParty] = useState<MockParty | null>(null);
   const [autoDownloadStatementPdf, setAutoDownloadStatementPdf] = useState(false);
   const [isBillingModalOpen, setIsBillingModalOpen] = useState(false);
+  const [repeatInvoice, setRepeatInvoice] = useState<MockInvoice | null>(null);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -751,11 +752,19 @@ export default function PartiesPage() {
           setPaymentDefaultType('PAYMENT_IN');
           setIsPaymentModalOpen(true);
         }}
+        onRepeatOrder={(inv) => {
+          setRepeatInvoice(inv);
+          setIsBillingModalOpen(true);
+        }}
       />
 
       <CreateInvoiceModal
         isOpen={isBillingModalOpen}
-        onClose={() => setIsBillingModalOpen(false)}
+        onClose={() => {
+          setIsBillingModalOpen(false);
+          setRepeatInvoice(null);
+        }}
+        repeatInvoice={repeatInvoice}
       />
 
       <ImportExportModal

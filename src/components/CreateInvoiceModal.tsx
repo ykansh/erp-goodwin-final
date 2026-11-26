@@ -37,6 +37,7 @@ interface CreateInvoiceModalProps {
   initialType?: 'TAX_INVOICE' | 'BILL_OF_SUPPLY' | 'QUOTATION' | 'DELIVERY_CHALLAN';
   defaultParty?: MockParty | null;
   editingInvoice?: MockInvoice | null;
+  repeatInvoice?: MockInvoice | null;
 }
 
 interface BillLineItem {
@@ -200,6 +201,7 @@ export default function CreateInvoiceModal({
   initialType = 'TAX_INVOICE',
   defaultParty,
   editingInvoice,
+  repeatInvoice,
 }: CreateInvoiceModalProps) {
   const {
     items,
@@ -219,7 +221,9 @@ export default function CreateInvoiceModal({
   const isGB2 =
     selectedCompany?.code === 'goodwin-2' ||
     editingInvoice?.companyCode === 'goodwin-2' ||
-    Boolean(editingInvoice?.invoiceNumber?.startsWith('GB2'));
+    Boolean(editingInvoice?.invoiceNumber?.startsWith('GB2')) ||
+    repeatInvoice?.companyCode === 'goodwin-2' ||
+    Boolean(repeatInvoice?.invoiceNumber?.startsWith('GB2'));
 
   const getPartyBalance = (party: MockParty) => {
     let pIn = 0;
@@ -403,6 +407,89 @@ export default function CreateInvoiceModal({
         setSelectedParty(matchingParty || null);
         setIsSuccess(false);
         setCreatedInvoice(null);
+      } else if (repeatInvoice) {
+        const type =
+          (repeatInvoice.invoiceType as any) ||
+          (initialType === 'QUOTATION' ? 'QUOTATION' : 'TAX_INVOICE');
+        setInvoiceType(type);
+        setInvoiceNumber(generateNumberForType(type));
+        setOrderNumber('');
+        const today = new Date().toISOString().split('T')[0];
+        setOrderDate(today);
+        setInvoiceDate(today);
+        setCustomerName(repeatInvoice.partyName || '');
+        setCustomerPhone(repeatInvoice.partyPhone || '');
+        setCustomerGstin(repeatInvoice.partyGstin || '');
+        setBillingName(repeatInvoice.billingName || repeatInvoice.partyName || '');
+        setBillingAddress(repeatInvoice.billingAddress || '');
+        setBillingState(repeatInvoice.billingState || 'Madhya Pradesh');
+        setPlaceOfSupply(repeatInvoice.placeOfSupply || '23');
+        const isSame =
+          !repeatInvoice.shippingAddress ||
+          repeatInvoice.shippingAddress === repeatInvoice.billingAddress;
+        setSameAsBilling(isSame);
+        setShippingAddress(repeatInvoice.shippingAddress || repeatInvoice.billingAddress || '');
+        setShippingState(
+          repeatInvoice.shippingState || repeatInvoice.billingState || 'Madhya Pradesh'
+        );
+        setTransportAddress(repeatInvoice.transportAddress || '');
+        setTransportContactNumber(repeatInvoice.transportContactNumber || '');
+        setTransportGstin(repeatInvoice.transportGstin || '');
+        setPlaceOfDelivery(repeatInvoice.placeOfDelivery || 'Madhya Pradesh');
+        setReferenceName(
+          currentUser?.name ||
+            repeatInvoice.employeeName ||
+            repeatInvoice.referenceName ||
+            employees[0]?.name ||
+            'Ansh Chourasiya'
+        );
+        setPvtMarka(repeatInvoice.pvtMarka || '');
+
+        if (repeatInvoice.items && repeatInvoice.items.length > 0) {
+          setLineItems(
+            repeatInvoice.items.map((it, idx) => ({
+              id: String(Date.now() + idx),
+              itemId: it.itemId || `it-${idx}`,
+              name: it.name,
+              hsnCode: it.hsnCode || '8507',
+              quantity: it.quantity,
+              unit: it.unit || 'PCS',
+              unitPrice: it.unitPrice,
+              discount: it.discount || 0,
+              taxRate: it.taxRate,
+            }))
+          );
+        } else {
+          setLineItems([
+            {
+              id: String(Date.now()),
+              itemId: '',
+              name: '',
+              hsnCode: '8507',
+              quantity: 1,
+              unit: 'PCS',
+              unitPrice: 0,
+              discount: 0,
+              taxRate: isGB2 ? 0 : 18,
+            },
+          ]);
+        }
+
+        setPaymentStatus('UNPAID');
+        setPaymentMode('UPI');
+        setPartialPaidInput(0);
+        setPaymentReference('');
+
+        const matchingParty = parties.find(
+          (p) =>
+            (repeatInvoice.partyName &&
+              p.name &&
+              p.name.toLowerCase() === repeatInvoice.partyName.toLowerCase()) ||
+            (repeatInvoice.partyPhone && p.phone === repeatInvoice.partyPhone)
+        );
+        setSelectedParty(matchingParty || null);
+        setIsSuccess(false);
+        setCreatedInvoice(null);
       } else {
         const type = initialType === 'QUOTATION' ? 'QUOTATION' : 'TAX_INVOICE';
         setInvoiceType(type);
@@ -415,7 +502,7 @@ export default function CreateInvoiceModal({
         }
       }
     }
-  }, [isOpen, initialType, editingInvoice, selectedCompany?.code]);
+  }, [isOpen, initialType, editingInvoice, repeatInvoice, selectedCompany?.code]);
 
   // Handle party selection from dropdown
   const handleSelectParty = (party: MockParty) => {
@@ -783,6 +870,8 @@ export default function CreateInvoiceModal({
                     <h2 className="font-black text-slate-900 text-base">
                       {editingInvoice
                         ? `Edit ${invoiceType === 'QUOTATION' ? 'Quotation' : 'Sale Invoice'} (#${invoiceNumber})`
+                        : repeatInvoice
+                        ? `Repeat Order for ${customerName || repeatInvoice.partyName}`
                         : invoiceType === 'QUOTATION'
                         ? 'Create Quotation / Estimate'
                         : isGB2
@@ -794,16 +883,26 @@ export default function CreateInvoiceModal({
                         'px-2 py-0.5 rounded-full text-[10px] font-bold',
                         editingInvoice
                           ? 'bg-amber-100 text-amber-800'
+                          : repeatInvoice
+                          ? 'bg-purple-100 text-purple-800'
                           : isGB2
                           ? 'bg-amber-100 text-amber-800'
                           : 'bg-indigo-100 text-[#4c3cce]'
                       )}
                     >
-                      {editingInvoice ? '✏️ Edit Mode' : isGB2 ? '⚡ Without GST' : '⚡ Fast Billing'}
+                      {editingInvoice
+                        ? '✏️ Edit Mode'
+                        : repeatInvoice
+                        ? '🔁 Repeat Order'
+                        : isGB2
+                        ? '⚡ Without GST'
+                        : '⚡ Fast Billing'}
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    {invoiceType === 'QUOTATION'
+                    {repeatInvoice
+                      ? `Creating a new repeat order for ${customerName || repeatInvoice.partyName} (from #${repeatInvoice.invoiceNumber}). Review quantities & rates, then save.`
+                      : invoiceType === 'QUOTATION'
                       ? 'Commercial quotation / rate estimate (does not deduct stock)'
                       : isGB2
                       ? 'Direct sales billing without GST with automatic ledger settlement & stock adjustment'
@@ -861,6 +960,32 @@ export default function CreateInvoiceModal({
 
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+              {/* REPEAT ORDER NOTICE BANNER */}
+              {repeatInvoice && (
+                <div className="p-3.5 rounded-2xl bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 text-purple-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs">
+                      <Sparkles size={16} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-sm text-purple-950">
+                          Repeating Order for {customerName || repeatInvoice.partyName}
+                        </span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-200 text-purple-800">
+                          From #{repeatInvoice.invoiceNumber}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-purple-700 mt-0.5">
+                        Items, rates, and customer details have been duplicated with a fresh invoice number (<strong>{invoiceNumber}</strong>) and today&apos;s date. Adjust if needed before saving.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-purple-800 font-bold text-[10px] shrink-0 shadow-2xs">
+                    ✨ New Bill
+                  </span>
+                </div>
+              )}
               
               {/* COMPANY & SELLER IDENTITY BANNER (With Official Logo, Legal Name, Address, GSTIN, Phone) */}
               <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -1903,6 +2028,8 @@ export default function CreateInvoiceModal({
                       ? 'Saving...'
                       : editingInvoice
                       ? 'Update & Save Changes'
+                      : repeatInvoice
+                      ? 'Save & Generate Repeat Order'
                       : invoiceType === 'QUOTATION'
                       ? 'Save & Generate Quotation'
                       : 'Save & Generate Bill'}
